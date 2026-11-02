@@ -90,7 +90,7 @@ SCREENS.hq = () => {
         <div class="stat" style="grid-column:1/-1"><b style="font-size:13px">${MATS.alloy} ${S.mats.alloy} · ${MATS.biogel} ${S.mats.biogel} · ${MATS.neural} ${S.mats.neural}</b><span>임플란트 재료</span></div>
         <div class="stat" style="grid-column:1/-1"><b style="font-family:var(--f-title);font-size:14px">${S.titles.length ? S.titles.map(t => `「${t}」`).join(' ') : '아직 없음'}</b><span>칭호</span></div>
       </div>
-      <div class="row wrap" style="margin-top:12px"><button class="btn cyan sm" data-a="saveCode">저장 코드 복사·불러오기</button>${ONLINE ? `<span class="sub" style="align-self:center">단장 ${esc(NET.name)} · 클라우드 저장 중</span><button class="btn gray sm" data-a="logout">로그아웃</button>` : ''}</div></div></div>`;
+      <div class="row wrap" style="margin-top:12px"><button class="btn cyan sm" data-a="saveCode">저장 코드 복사·불러오기</button>${ONLINE ? `<span class="sub" style="align-self:center">단장 ${esc(NET.name)} · ${isGuest() ? '<b style="color:var(--amber)">게스트</b>' : 'Google 계정'} · 클라우드 저장 중</span>${isGuest() ? '<button class="btn sm" data-a="linkGoogle">Google 계정 연결</button>' : ''}<button class="btn gray sm" data-a="logout">로그아웃</button>` : ''}</div></div></div>`;
 };
 ACT.toggleSfx = () => { S.settings.sfx = !S.settings.sfx; audio(); sfx('click'); refresh(); };
 

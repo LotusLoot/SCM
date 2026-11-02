@@ -100,7 +100,29 @@ async function netBoot() {
   subDistricts(); subNews(); subCrew();
   addEventListener('visibilitychange', () => { if (document.hidden) cloudSave(); });
 }
-ACT.logout = async () => { await cloudSave(); Object.values(NET.unsubs).forEach(f => f && f()); await NET.auth.signOut(); try { localStorage.removeItem(SAVE_KEY); } catch (e) { } location.reload(); };
+/* 게스트 → Google 계정 연결 (진행 상황은 그대로) */
+const isGuest = () => !!(NET.auth && NET.auth.currentUser && NET.auth.currentUser.isAnonymous);
+ACT.linkGoogle = async () => {
+  const u = NET.auth.currentUser; if (!u) return;
+  const p = new firebase.auth.GoogleAuthProvider();
+  try { await u.linkWithPopup(p); closeModal(true); await cloudSave(); toast('Google 계정에 연결했어요! 이제 다른 기기에서도 Google로 로그인하면 이어서 해요', 'good'); sfx('reward'); refresh(); }
+  catch (e) {
+    const c = e.code || '';
+    if (c.includes('credential-already-in-use') || c.includes('email-already-in-use')) toast('이 Google 계정은 이미 다른 단장이 쓰고 있어요. 다른 Google 계정을 고르세요', 'bad');
+    else if (/popup-blocked|operation-not-supported/.test(c)) { try { await cloudSave(); await u.linkWithRedirect(p); } catch (e2) { toast(loginMsg(e2), 'bad'); } }
+    else toast(loginMsg(e), 'bad');
+  }
+};
+ACT.logout = async () => {
+  if (isGuest() && !ACT._lo) { // 게스트는 로그아웃하면 다시 못 들어와요
+    openModal({ label: 'LOGOUT', title: '게스트 로그아웃', c: 'var(--red)',
+      html: `<p style="margin:0">게스트 계정은 로그아웃하면 <b style="color:var(--red)">다시 들어올 수 없어요</b>. 지금까지의 진행 상황이 사라져요.</p><p class="sub">먼저 Google 계정을 연결하면 안전하게 로그아웃할 수 있어요.</p>
+        <div class="row wrap"><button class="btn block" data-a="linkGoogle">Google 계정 연결하기</button><button class="btn red block" id="lo-yes">그래도 로그아웃</button></div>`,
+      onMount: b => { $('#lo-yes', b).onclick = () => { ACT._lo = 1; closeModal(true); ACT.logout(); }; } });
+    return;
+  }
+  ACT._lo = 0;
+  await cloudSave(); Object.values(NET.unsubs).forEach(f => f && f()); await NET.auth.signOut(); try { localStorage.removeItem(SAVE_KEY); } catch (e) { } location.reload(); };
 
 /* ---------- 저장 ---------- */
 const _localSave = save;
