@@ -47,7 +47,7 @@ const GRADES = [null,
   { n: '레전드', en: 'LEGEND', c: '#FF3D9A', m: 3.0 },
 ];
 const frameOf = g => (g >= 7 ? 2 : g === 6 ? 1 : 0);
-const imgSrc = (id, f) => `img/${id}_${f}.webp`;
+const imgSrc = (id, f) => (typeof IMGURL !== 'undefined' && IMGURL[`${id}_${f}`]) || `img/${id}_${f}.webp`;
 
 const IMPLANTS = {
   eye: { n: '눈', stat: '치명타', per: 2, unit: '%p', mat: 'neural', rep: 5 },

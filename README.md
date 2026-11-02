@@ -61,7 +61,7 @@ window.FIREBASE_CONFIG = {
 ## 5단계. GitHub에 올리고 Pages 켜기
 
 1. <https://github.com/new> 에서 새 저장소를 만들어요. 이름 예시: `scm`. **Public**으로 만들어요 (무료 계정은 Public이어야 Pages가 돼요).
-2. 저장소 화면에서 **Add file → Upload files**를 눌러 이 폴더 안의 파일을 **모두** 끌어다 놓아요. `img` 폴더도 폴더째 끌어 놓으면 돼요. `index.html`이 저장소 맨 위에 있어야 해요. 그리고 **Commit changes**.
+2. 저장소 화면에서 **Add file → Upload files**를 눌러 이 폴더 안의 파일을 **모두** 끌어다 놓아요. `index.html`이 저장소 맨 위에 있어야 해요. 그리고 **Commit changes**.
 3. 저장소 **Settings → Pages**에서
    - Source: **Deploy from a branch**
    - Branch: **main**, 폴더 **/ (root)** → **Save**
@@ -106,7 +106,7 @@ GitHub 저장소에서 파일을 다시 업로드(같은 이름이면 덮어써�
 | `net.js` | Firebase 온라인 기능 |
 | `firebase-config.js` | 내 Firebase 설정 (2단계) |
 | `firestore.rules` | 데이터베이스 보안 규칙 (4단계) |
-| `img/` | 용병 그림 42장 (14명 × 기본·에이스·레전드) |
+| `imgdata.js` | 용병 그림 42장 (14명 × 기본·에이스·레전드)을 파일 하나에 담은 것 |
 
 ## 알아 둘 점
 
