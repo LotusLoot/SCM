@@ -397,7 +397,7 @@ function runBattle(cfg) {
   for (const e of cfg.enemies) B.units.push(mkUnit('e', e, ebuff));
   B.target = B.units.find(u => u.isTarget) || null;
   B.units.filter(u => u.side === 'e').forEach(giveAffix);
-  if (!cfg.noProps) for (let i = 0; i < 2; i++) spawnProp();
+  if (FUN.props && !cfg.noProps) for (let i = 0; i < 2; i++) spawnProp();
   if (cfg.cargo) {
     const ally = B.units.filter(u => u.side === 'a');
     const hp = Math.round(ally.reduce((s, u) => s + u.maxHp, 0) / ally.length * 3.2);
@@ -510,6 +510,7 @@ function update(dt) {
   checkEnd();
 }
 /* ---------- 재미 요소: 폭발 드럼통 · 보급 캡슐 · 버스트 모드 · 적 변이 ---------- */
+const FUN = { props: false, caps: false }; // 드럼통 · 보급 캡슐 (빼 둠)
 const leadHaste = u => (u.buff && u.buff.haste > 0 ? .6 : 1) * (B.burst > 0 ? .72 : 1);
 const CAPS = {
   rage: { n: '광폭', d: '8초 동안 공격력 +50%', c: '#FF6B8E', ic: '⚔' },
@@ -575,9 +576,9 @@ function updateFun(g, dt) {
     if (!pr.dead) for (const s of B.shots) if (s.src.side === 'a' && Math.hypot(s.x - pr.x, (s.y - pr.y) * DEPTH) < 34) { s.done = true; blowProp(pr); break; }
   }
   B.props = B.props.filter(p => !p.dead);
-  if (!B.cfg.noProps && B.props.length < 1) { B.propT -= g; if (B.propT <= 0) { spawnProp(); B.propT = 18; } }
+  if (FUN.props && !B.cfg.noProps && B.props.length < 1) { B.propT -= g; if (B.propT <= 0) { spawnProp(); B.propT = 18; } }
   // 보급 캡슐
-  B.capT -= g; if (B.capT <= 0) { B.capT = rnd(14, 18); if (B.caps.length < 2) dropCap(); }
+  if (FUN.caps) B.capT -= g; if (B.capT <= 0) { B.capT = rnd(14, 18); if (B.caps.length < 2) dropCap(); }
   for (const c of B.caps) {
     if (c.fall > 0) { c.fall -= g; continue; }
     c.t -= g;
