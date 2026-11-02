@@ -94,6 +94,7 @@ async function netBoot() {
   S.crew = null; S.crewXp = 0;
   netDaily();
   const first = { name: NET.name, crewId: NET.crewId };
+  migrate(S);
   if (!d || !d.defense) first.defense = defenseTeam();
   await userSet(first);
   cloudSave();
@@ -113,7 +114,7 @@ function cloudSave() {
     buildingBest: S.building.best, rep: repLv(), title: S.title || '', updatedAt: sts(),
   }, { merge: true }).catch(netErr);
 }
-function defenseTeam() { return S.squad.map((id, slot) => id ? { id, slot, g: S.roster[id].g, imp: S.roster[id].imp } : null).filter(Boolean); }
+function defenseTeam() { return S.squad.map((id, slot) => id ? { id, slot, g: S.roster[id].g, imp: S.roster[id].imp, mlv: S.roster[id].lv || 1 } : null).filter(Boolean); }
 ACT.setDefense = () => { userSet({ defense: defenseTeam(), power: squadPower() }); toast('현재 분대를 방어 팀으로 등록했어요', 'good'); };
 
 /* ---------- 하루 / 주간 (한국 시간) ---------- */
@@ -125,7 +126,7 @@ function netDaily() {
   const dk = dayKey();
   if (!S.dayKey) S.dayKey = dk;
   else if (S.dayKey !== dk) {
-    S.dayKey = dk; S.day++; changed = true;
+    S.dayKey = dk; S.day++; changed = true; onNewDay();
     S.tickets = 3; S.defenses = 3; S.spClaimed = false; S.arena.tries = 5; S.arena.opps = null; S.dive.left = 3; S.bounty.tracks = 3;
     const keep = S.jobs.filter(j => j.st === 'ship');
     S.jobs = keep.concat(genJobs(S)).slice(0, Math.max(6, keep.length + 4));
@@ -355,7 +356,7 @@ async function fetchDefense(crewId) {
   const c = qs.docs.map(x => x.data()).filter(x => x.defense && x.defense.length);
   if (!c.length) return null;
   const p = pick(c);
-  return { name: p.name, team: p.defense.slice(0, 5).map(m => ({ id: m.id, slot: m.slot, g: m.g, imp: m.imp, real: true, frame: frameOf(m.g) })) };
+  return { name: p.name, team: p.defense.slice(0, 5).map(m => ({ id: m.id, slot: m.slot, g: m.g, imp: m.imp, mlv: m.mlv || 1, real: true, frame: frameOf(m.g) })) };
 }
 NETACT.fightDistrict = async v => {
   const i = +v, d = DISTRICTS[i], raw = NET.dist[i], ours = raw.owner === NET.crewId;
@@ -369,9 +370,8 @@ NETACT.fightDistrict = async v => {
     let t = null; try { t = await fetchDefense(raw.owner); } catch (e) { }
     if (t) { enemies = t.team; ename = `${raw.ownerName} · ${t.name}`; } else { enemies = makeGangTeam(d.lv + 2); ename = raw.ownerName; }
   }
-  if (ours) S.defenses--; else S.tickets--;
-  save();
   startBattle({
+    pay: () => { if (ours) S.defenses--; else S.tickets--; },
     title: `${ours ? '구역 방어' : '구역 공격'} · ${d.n}`, enemyName: ename, allies: squadAllies(), enemies, time: 75,
     onEnd: res => {
       if (!res.win) { if (res.kind !== 'retreat') toast(`${d.n} ${ours ? '방어' : '공격'} 실패. 배치를 바꾸고 다시 도전하세요`, 'bad'); return; }
@@ -409,8 +409,8 @@ const netOpenArena = async function () {
     try {
       const qs = await NET.db.collection('users').where('arenaScore', '>=', Math.max(0, a.score - 200)).orderBy('arenaScore').limit(25).get();
       real = shuffle(qs.docs.filter(d => d.id !== NET.uid && (d.data().defense || []).length)).slice(0, 3).map(d => {
-        const u = d.data(), team = u.defense.slice(0, 5).map(m => ({ id: m.id, slot: m.slot, g: m.g, imp: m.imp, real: true, frame: frameOf(m.g) }));
-        const pw = Math.round(team.reduce((s, t) => s + unitPower(mercStats(t.id, t.g, t.imp)), 0));
+        const u = d.data(), team = u.defense.slice(0, 5).map(m => ({ id: m.id, slot: m.slot, g: m.g, imp: m.imp, mlv: m.mlv || 1, real: true, frame: frameOf(m.g) }));
+        const pw = Math.round(team.reduce((s, t) => s + unitPower(mercStats(t.id, t.g, t.imp, 1, t.mlv)), 0));
         return { n: u.name, real: true, pw, lv: Math.max(1, 1 + (pw / teamPowerAt(1) - 1) / .13), team };
       });
     } catch (e) { console.error(e); }
@@ -447,9 +447,10 @@ const netOpenBounty = async function () {
 NETACT.bountyFight = () => {
   if (!NET.crewId) return _bountyFight();
   const bt = S.bounty; if (bt.clues < 3 || bt.tracks <= 0 || bt.done) return;
-  closeModal(); bt.tracks--; save();
+  closeModal();
   const start = bt.hp;
   startBattle({
+    pay: () => { bt.tracks--; },
     title: `현상금 사냥 · ${MERCS[bt.boss].n}`, enemyName: `현상수배범 ${MERCS[bt.boss].n}`, allies: squadAllies(),
     enemies: [{ id: bt.boss, slot: 0, boss: true, lv: bt.lv, frame: 2, hp: start }], time: 75,
     onEnd: async res => {

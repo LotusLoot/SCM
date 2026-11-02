@@ -8,51 +8,6 @@ const gangPick = () => DISTRICTS[rint(0, Math.min(11, repLv() + 1))].g;
 const owns = id => !!S.roster[id];
 
 /* ================= 본부 ================= */
-const STAGE_POS = [[56, 72], [68, 97], [16, 56], [27, 77], [38, 98]];
-SCREENS.hq = () => {
-  const pw = squadPower(), sq = S.squad;
-  const els = {}; sq.filter(Boolean).forEach(id => { const e = MERCS[id].el; els[e] = (els[e] || 0) + 1; });
-  const roles = sq.filter(Boolean).map(id => MERCS[id].role);
-  const warn = []; if (!roles.includes('guardian')) warn.push('가디언 없음'); if (!roles.includes('medic')) warn.push('메딕 없음');
-  const order = [2, 3, 4, 0, 1];
-  const slots = order.map(i => {
-    const [x, y] = STAGE_POS[i], id = sq[i];
-    if (!id) return `<div class="slot empty" style="left:${x}%;top:${y}%;z-index:${y}" data-a="pickSlot" data-v="${i}" role="button" tabindex="0" aria-label="빈 자리 ${i + 1}"><div class="holo">+</div><div class="lbl" style="--gc:var(--cyan)">${i < 2 ? '앞줄' : '뒷줄'}</div></div>`;
-    const o = S.roster[id], f = frameOf(o.g), [w, h, ax] = SPR[id][f], H = Math.round((innerWidth < 520 ? 118 : 140) * MERCS[id].sz), sw = Math.round(w / 300 * H), sh = Math.round(h / 300 * H);
-    return `<div class="slot" style="left:${x}%;top:${y}%;z-index:${y};--gc:${GRADES[o.g].c}" data-a="pickSlot" data-v="${i}" role="button" tabindex="0" aria-label="${MERCS[id].n} 바꾸기">
-      <img src="${imgSrc(id, f)}" alt="" style="width:${sw}px;height:${sh}px;transform:translateX(${((.5 - ax) * 100).toFixed(1)}%)" draggable="false"><div class="pad"></div><div class="lbl">${MERCS[id].n}</div></div>`;
-  }).join('');
-  const L = repLv(), open = S.jobs.filter(j => j.st === 'open').length;
-  const q = (k, c, v, d, act, art) => `<button class="box qcard brk" style="--c:${c}" data-a="${act}"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span><img src="${imgSrc(art, 0)}" alt=""></button>`;
-  const quick = [
-    q('JOBS', 'var(--pink)', open, '남은 의뢰', 'tab', 'nano').replace('data-a="tab"', 'data-a="tab" data-v="job"'),
-    q('TERRITORY', 'var(--cyan)', L >= 3 ? (S.crew ? `${S.tickets}/3` : '—') : 'LV.3', L >= 3 ? (S.crew ? '구역 공격권' : '크루를 만들면 열려요') : '평판 LV.3에 열려요', 'tab', 'glitch').replace('data-a="tab"', 'data-a="tab" data-v="city"'),
-    q('ARENA', 'var(--amber)', L >= 2 ? `${S.arena.tries}/5` : 'LV.2', L >= 2 ? '아레나 남은 횟수' : '평판 LV.2에 열려요', 'tab', 'blade').replace('data-a="tab"', 'data-a="tab" data-v="ops"'),
-    q('RECRUIT', 'var(--violet)', Math.floor(S.credits / 1000), '일반 영입 가능 횟수', 'tab', 'eclipse').replace('data-a="tab"', 'data-a="tab" data-v="hire"'),
-  ].join('');
-  const unlockRows = REP_UNLOCK.slice(1).map((t, i) => `<tr class="${i + 1 <= L ? 'got' : 'no'} ${i + 1 === L ? 'cur' : ''}"><td class="px">LV.${i + 1}</td><td>${t}</td></tr>`).join('');
-  const tier = tierOf(S.arena.score);
-  return `<div class="screen">${head('HEADQUARTERS', '본부', `DAY ${S.day} · 용병 5명이 전투 대형으로 서 있어요. 누르면 바꿀 수 있어요.`)}
-    <div class="stage">${slots}<div class="info"><span class="pwl">SQUAD POWER</span><span class="pw">${fmt(pw)}</span>
-      <div class="row wrap" style="justify-content:flex-end;gap:4px">${Object.entries(els).map(([e, n]) => `<span class="tag e-${e}">${ELEMS[e].n} ${n}</span>`).join('')}</div>
-      ${warn.length ? `<span class="warn">⚠ ${warn.join('·')}</span>` : ''}</div></div>
-    <div class="grid2">${quick}</div>
-    <div class="box brk" style="--c:var(--amber)"><div class="spread"><div><div class="eyebrow" style="color:var(--amber)">DAY ${S.day}</div><div class="h2">${ONLINE ? '오늘의 작전' : '하루 마치기'}</div>
-      <p class="sub">${ONLINE ? '매일 0시(한국 시간)에 의뢰판·공격권·아레나·넷 다이브 보상이 새로 채워져요. 매주 월요일에 지난주 구역 순위 보상.' : '의뢰판·공격권·아레나·넷 다이브 보상이 새로 채워지고, 경쟁 크루가 움직여요. 7일마다 주간 순위 보상.'}</p></div>
-      ${ONLINE ? '<span class="px dim" style="font-size:11px">AUTO 00:00</span>' : '<button class="btn amber" data-a="endDay">다음 날로</button>'}</div></div>
-    <div class="box"><div class="eyebrow">REPUTATION</div><div class="h2" style="margin-bottom:8px">평판 해금표</div>
-      <div style="overflow-x:auto"><table class="tbl"><tbody>${unlockRows}</tbody></table></div></div>
-    <div class="box"><div class="eyebrow">RECORDS</div><div class="h2" style="margin-bottom:10px">기록</div>
-      <div class="stats">
-        <div class="stat"><b>${S.rec.w}승 ${S.rec.l}패</b><span>전적</span></div>
-        <div class="stat"><b>${S.building.best}F</b><span>빌딩 습격 최고 층수</span></div>
-        <div class="stat"><b>${fmt(S.dive.best)}</b><span>넷 다이브 최고점</span></div>
-        <div class="stat"><b style="color:${tier[2]}">${S.arena.score} ${tier[1]}</b><span>아레나 점수</span></div>
-        <div class="stat" style="grid-column:1/-1"><b style="font-size:13px">${MATS.alloy} ${S.mats.alloy} · ${MATS.biogel} ${S.mats.biogel} · ${MATS.neural} ${S.mats.neural}</b><span>임플란트 재료</span></div>
-        <div class="stat" style="grid-column:1/-1"><b style="font-family:var(--f-title);font-size:14px">${S.titles.length ? S.titles.map(t => `「${t}」`).join(' ') : '아직 없음'}</b><span>칭호</span></div>
-      </div>
-      <div class="row wrap" style="margin-top:12px"><button class="btn cyan sm" data-a="saveCode">저장 코드 복사·불러오기</button>${ONLINE ? `<span class="sub" style="align-self:center">단장 ${esc(NET.name)} · 클라우드 저장 중</span><button class="btn gray sm" data-a="logout">로그아웃</button>` : ''}</div></div></div>`;
-};
 ACT.endDay = () => endDay();
 ACT.pickSlot = v => {
   const slot = +v, cur = S.squad[slot];
@@ -91,109 +46,9 @@ ACT.loadCode = () => { try { S = fromCode($('#sc-in').value); closeModal(); refr
 ACT.resetGame = (v, el) => { if (!el.dataset.arm) { el.dataset.arm = 1; el.textContent = '정말 지울까요? 한 번 더'; el.classList.replace('gray', 'red'); return; } S = freshState(); closeModal(); TAB = 'hq'; refresh(false); toast('새 용병단을 시작했어요'); };
 
 /* ================= 용병 ================= */
-SCREENS.merc = () => {
-  const n = MERC_IDS.filter(owns).length;
-  const sections = ROLE_ORDER.map(r => {
-    const ids = MERC_IDS.filter(id => MERCS[id].role === r);
-    return `<div class="rolehead">${IC[r]}<b>${ROLES[r].n}</b><span>${ROLES[r].d} · ${ROLES[r].row === 'front' ? '앞줄' : '뒷줄'}</span></div>
-      <div class="cards">${ids.map(id => mercCard(id, { act: 'mercDetail' })).join('')}</div>`;
-  }).join('');
-  return `<div class="screen">${head('ROSTER', `보유 ${n}/14`, '카드를 누르면 상세 정보, 승급, 임플란트를 볼 수 있어요.')}${sections}</div>`;
-};
-ACT.mercDetail = id => {
-  const m = MERCS[id], o = S.roster[id], g = o ? o.g : 1;
-  const stg = [['BASIC', 0, 1], ['ACE', 1, 6], ['LEGEND', 2, 7]].map(([l, f, need]) =>
-    `<div class="${o && frameOf(g) === f ? 'cur' : ''}"><span>${l}</span><img class="${o && g >= need ? '' : 'lock'}" src="${imgSrc(id, f)}" alt=""></div>`).join('');
-  const st = o ? ownStats(id) : mercStats(id, 1);
-  const bar = (n, v, max, c) => `<div class="sbar"><span>${n}</span><div class="gauge"><i style="width:${Math.min(100, v / max * 100)}%;--gc:${c}"></i></div><span class="px">${fmt(v)}</span></div>`;
-  const pr = canPromote(id);
-  let promo = '';
-  if (o) {
-    const nextG = Math.min(7, g + 1);
-    promo = g >= 7 ? `<button class="btn block off" disabled>최고 등급 · 이후 정수는 2,000C로 바뀌어요</button>`
-      : pr.ok ? `<button class="btn block" data-a="promote" data-v="${id}">승급: ${GRADES[g].n} → ${GRADES[nextG].n} (정수 1)</button>`
-        : pr.lock ? `<span class="lockline">${IC.lock}${pr.why}</span>` : `<button class="btn block off" disabled>승급하려면 정수 1개 필요 (보유 ${o.ess})</button>`;
-  }
-  const imps = o ? Object.entries(IMPLANTS).map(([k, im]) => {
-    const lv = o.imp[k], locked = repLv() < im.rep, cost = 300 * (lv + 1), mc = (lv + 1) * 2;
-    return `<div class="imp"><b>${im.n}<small>${im.stat} +${im.per}${im.unit}/LV</small></b>
-      <div><div class="gauge thin"><i style="width:${lv * 10}%;--gc:var(--violet)"></i></div><small class="px dim" style="font-size:10px">LV.${lv}/10 · ${im.stat} +${lv * im.per}${im.unit}</small></div>
-      ${locked ? `<span class="lockline" style="padding:4px 8px">${IC.lock}LV.${im.rep}</span>` : lv >= 10 ? '<span class="px dim">MAX</span>'
-        : `<button class="btn sm amber" data-a="implant" data-v="${id}:${k}">${fmt(cost)}C·${MATS[im.mat]} ${mc}</button>`}</div>`;
-  }).join('') : '';
-  openModal({
-    label: `${ROLES[m.role].n} · ${ELEMS[m.el].n}`, title: m.n, c: GRADES[g].c,
-    html: `<div class="detail-art">${stg}</div>
-      <p style="margin:0">${esc(m.look)}</p>
-      <div class="row wrap"><span class="tag e-${m.el}">${ELEMS[m.el].n}</span><span class="tag" style="color:var(--dim)">${ROLES[m.role].n} · ${ROLES[m.role].d}</span>
-        ${o ? `<span class="tag" style="color:${GRADES[g].c}">${GRADES[g].n} ${GRADES[g].en}</span><span class="tag" style="color:var(--amber)">정수 ${o.ess}</span>` : `<span class="tag" style="color:var(--dim)">${m.legend ? 'LEGENDARY · 영입에서 3~6%' : 'NOT HIRED · 영입에서 만날 수 있어요'}</span>`}</div>
-      <div class="box brk ultbox"><div class="eyebrow" style="color:var(--pink)">ULTIMATE</div><div class="un">${m.ult}</div><div class="sub">${m.ud}</div></div>
-      <div style="display:flex;flex-direction:column;gap:6px">${bar('체력', st.hp, 6000, 'var(--lime)')}${bar('공격', st.atk, 900, 'var(--pink)')}${bar('방어', st.def, 500, 'var(--cyan)')}${bar('속도', st.spd, 220, 'var(--amber)')}${bar('치명', st.crit, 60, 'var(--violet)')}</div>
-      ${promo}
-      ${o ? `<div><div class="eyebrow" style="color:var(--violet)">IMPLANTS</div><div class="sub">장비 대신 몸에 다는 사이버 부품. 구역 특산품 재료로 강화해요.</div>${imps}</div>` : ''}`,
-  });
-};
-ACT.promote = id => {
-  const pr = canPromote(id); if (!pr.ok) { toast(pr.why, 'bad'); return; }
-  const o = S.roster[id]; o.ess--; o.g++;
-  toast(`승급! ${MERCS[id].n} → ${GRADES[o.g].n}`, 'gold');
-  if (o.g >= 6) legendFlash();
-  refresh(); ACT.mercDetail(id);
-};
-ACT.implant = v => {
-  const [id, k] = v.split(':'), o = S.roster[id], im = IMPLANTS[k], lv = o.imp[k], cost = 300 * (lv + 1), mc = (lv + 1) * 2;
-  if (S.credits < cost) { toast(`크레딧이 ${fmt(cost - S.credits)}C 모자라요. 의뢰로 벌어 오세요`, 'bad'); return; }
-  if (S.mats[im.mat] < mc) { toast(`${MATS[im.mat]}이(가) 모자라요. 구역 특산품·의뢰·빌딩 습격에서 얻어요`, 'bad'); return; }
-  S.credits -= cost; S.mats[im.mat] -= mc; o.imp[k]++;
-  toast(`${MERCS[id].n} ${im.n} 임플란트 LV.${o.imp[k]}`, 'good'); refresh(); ACT.mercDetail(id);
-};
 function legendFlash() { if (REDUCED) return; const f = document.createElement('div'); f.className = 'flash'; document.body.appendChild(f); setTimeout(() => f.remove(), 1250); }
 
 /* ================= 영입 ================= */
-SCREENS.hire = () => {
-  const L = repLv();
-  const ban = (type) => {
-    const p = type === 'p', c = p ? 'var(--cyan)' : 'var(--amber)', left = (p ? 50 : 80) - S.pity[type];
-    const cost1 = p ? 100 : 1000, cost10 = p ? 900 : 9000, cur = p ? 'chip' : 'credit';
-    const locked = p && L < 5;
-    return `<div class="box brk banner" style="--c:${c}">
-      <div class="arts"><img src="${imgSrc('chrono', p ? 2 : 0)}" alt=""><img src="${imgSrc('eclipse', p ? 2 : 0)}" alt=""></div>
-      <div class="txtw"><div class="eyebrow" style="color:${c}">${p ? 'PREMIUM' : 'STANDARD'} RECRUIT</div>
-      <div class="ttl">${p ? '고급 영입' : '일반 영입'}</div>
-      <div class="sub">${p ? '데이터칩으로 하는 영입. 데이터칩은 게임 안에서만 모아요.' : '크레딧으로 하는 영입. 일반 용병 12명 중 1명이 나와요.'}</div>
-      <div class="row wrap" style="gap:6px"><span class="tag" style="color:${c}">전설 ${p ? 6 : 3}%</span><span class="tag" style="color:${c}">${p ? 50 : 80}회 천장</span></div>
-      <div><div class="sub" style="font-size:12px">전설 확정까지 <b class="px" style="color:${c}">${left}</b>회</div><div class="gauge" style="margin-top:4px"><i style="width:${S.pity[type] / (p ? 50 : 80) * 100}%;--gc:${c}"></i></div></div></div>
-      <div class="btns">${locked ? lockLine(5) : `
-        <button class="btn ${p ? 'cyan' : 'amber'}" data-a="pull" data-v="${type}1">1회 · ${resIcon(cur).replace('<svg', '<svg class="ic"')} ${fmt(cost1)}</button>
-        <button class="btn" data-a="pull" data-v="${type}10">10회 · ${resIcon(cur).replace('<svg', '<svg class="ic"')} ${fmt(cost10)}</button>`}</div></div>`;
-  };
-  return `<div class="screen">${head('RECRUIT', '영입', '같은 용병이 겹치면 정수가 나오고, 정수 1개로 등급이 한 번 올라가요. 레전드 이후 정수는 2,000C로 바뀌어요.')}
-    <div class="banners">${ban('n')}${ban('p')}</div>
-    <div class="box"><div class="eyebrow">RATES</div><table class="tbl"><thead><tr><th></th><th>일반 영입</th><th>고급 영입</th></tr></thead><tbody>
-      <tr><td>비용</td><td>1회 1,000C / 10회 9,000C</td><td>1회 데이터칩 100 / 10회 900</td></tr>
-      <tr><td>일반 용병 12명 중 1명</td><td>97%</td><td>94%</td></tr><tr><td>전설 (크로노·이클립스)</td><td>3%</td><td>6%</td></tr>
-      <tr><td>천장</td><td>80회 안에 전설 확정</td><td>50회 안에 전설 확정</td></tr></tbody></table></div></div>`;
-};
-ACT.pull = v => {
-  const type = v[0], n = +v.slice(1), p = type === 'p';
-  const cost = p ? (n === 10 ? 900 : 100) : (n === 10 ? 9000 : 1000);
-  if (p && repLv() < 5) { toast('고급 영입은 평판 LV.5에 열려요', 'bad'); return; }
-  if (p ? S.chips < cost : S.credits < cost) { toast(p ? `데이터칩이 ${cost - S.chips}개 모자라요` : `크레딧이 ${fmt(cost - S.credits)}C 모자라요. 의뢰로 벌어 오세요`, 'bad'); return; }
-  if (p) S.chips -= cost; else S.credits -= cost;
-  const res = []; for (let i = 0; i < n; i++) { const id = rollOne(type); res.push({ id, r: acquire(id) }); }
-  save(); renderTop(); renderTabs();
-  const html = `<div class="pull-grid">${res.map((x, i) => `<div class="pc" data-i="${i}" data-leg="${MERCS[x.id].legend ? 1 : ''}"><div class="flipper">${mercCard(x.id, { force: 1 })}</div>
-    <div class="res-l" style="color:${x.r.kind === 'new' ? 'var(--cyan)' : x.r.kind === 'cr' ? 'var(--amber)' : 'var(--fg)'}">${x.r.txt}</div></div>`).join('')}</div>
-    <div class="row wrap" style="justify-content:center;margin-top:6px"><button class="btn ${p ? 'cyan' : 'amber'}" data-a="pull" data-v="${v}">한 번 더</button><button class="btn gray" data-a="closeModal">확인</button></div>`;
-  openModal({
-    label: 'RESULT', title: `${p ? '고급' : '일반'} 영입 ${n}회`, wide: true, c: p ? 'var(--cyan)' : 'var(--amber)', html,
-    onMount: (b) => {
-      $$('.pc', b).forEach((pc, i) => setTimeout(() => { pc.classList.add('show'); if (pc.dataset.leg) legendFlash(); }, REDUCED ? 0 : 150 + i * 90 + (pc.dataset.leg ? 200 : 0)));
-    }, onClose: () => refresh(),
-  });
-  if (TAB === 'hire') { const sc = $('#view').scrollTop; $('#view').innerHTML = SCREENS.hire(); $('#view').scrollTop = sc; }
-};
-
 /* ================= 의뢰 ================= */
 SCREENS.job = () => {
   const brokers = Object.entries(BROKERS).map(([k, b]) => `<div class="box broker" style="padding:10px">${hexEmblem(b.c, b.k, 30)}<div style="min-width:0"><b>${b.n}</b><small>${b.d}</small></div></div>`).join('');
@@ -356,8 +211,8 @@ ACT.fightDistrict = v => {
   const rival = RIVALS.find(r => r.id === (ours ? pick(RIVALS).id : st.owner));
   const lv = st.owner === 'npc' ? d.lv : Math.max(d.lv, rival ? rivalLv(rival) : d.lv);
   const ename = st.owner === 'npc' ? d.g : (rival ? rival.n : d.g);
-  if (ours) S.defenses--; else S.tickets--;
   startBattle({
+    pay: () => { if (ours) S.defenses--; else S.tickets--; },
     title: `${ours ? '구역 방어' : '구역 공격'} · ${d.n}`, enemyName: ename, allies: squadAllies(), enemies: makeGangTeam(lv), time: 75,
     onEnd: res => {
       if (!res.win) { if (res.kind !== 'retreat') toast(`${d.n} ${ours ? '방어' : '공격'} 실패. 배치를 바꾸고 다시 도전하세요`, 'bad'); return; }
@@ -371,20 +226,6 @@ ACT.fightDistrict = v => {
 };
 
 /* ================= 작전 ================= */
-SCREENS.ops = () => {
-  const L = repLv(), B2 = S.building, run = B2.run, bt = S.bounty, tier = tierOf(S.arena.score);
-  const floors = (() => { const n = Math.max(B2.best, run ? run.floor : 0, 1); const arr = []; for (let f = 1; f <= Math.min(n, 30); f++) arr.push(`<i class="${run && f === run.floor ? 'now' : ''}" style="height:${30 + f / Math.max(n, 1) * 70}%"></i>`); return arr.join(''); })();
-  const card = (key, c, art, f, title, lock, body) => `<div class="box brk op ${L < lock ? 'locked' : ''}" style="--c:${c}" data-a="op" data-v="${key}" role="button" tabindex="0">
-    <div class="opart"><img src="${imgSrc(art, f)}" alt=""></div><div class="eyebrow" style="color:${c}">${key.toUpperCase()}</div><div class="ot">${title}</div>${L < lock ? lockLine(lock) : body}</div>`;
-  const clues = [0, 1, 2].map(i => `<i style="width:16px;height:16px;transform:rotate(45deg);display:inline-block;border:1px solid var(--red);${i < bt.clues ? 'background:var(--red)' : ''}"></i>`).join(' ');
-  return `<div class="screen">${head('OPERATIONS', '작전', '빌딩 습격·현상금 사냥·넷 다이브·아레나. 혼자서도 실력으로 랭킹을 올려요.')}${ONLINE ? '<div><button class="btn amber sm" data-a="rankings">◆ 전체 랭킹 보기</button></div>' : ''}<div class="ops">
-    ${card('building', 'var(--pink)', 'reaper', 1, '빌딩 습격', 4, `<div class="floors">${floors}</div><div class="px" style="font-size:12px">BEST ${B2.best}F${run ? ` · <span style="color:var(--pink)">NOW ${run.floor}F</span>` : ''}</div><p class="sub">층마다 갈림길을 골라 올라가요. 지면 처음부터.</p>`)}
-    ${card('bounty', 'var(--red)', bt.boss, 2, '현상금 사냥', 7, `<div class="sub">이번 주: <b style="color:var(--fg)">${MERCS[bt.boss].n}</b>${bt.done ? ' · 제압 완료' : ''}</div><div class="row">${clues}<span class="px" style="font-size:11px">단서 ${bt.clues}/3</span></div>
-      <div class="gauge" style="max-width:60%"><i style="width:${bt.hp * 100}%;--gc:var(--red)"></i></div><div class="px" style="font-size:11px">오늘 추격 ${bt.tracks}/3</div>`)}
-    ${card('netdive', 'var(--cyan)', 'glitch', 1, '넷 다이브', 6, `<div class="px" style="font-size:22px;color:var(--cyan)">${fmt(S.dive.best)}</div><div class="sub">최고 점수 · 오늘 보상 ${S.dive.left}/3회</div><p class="sub">데이터 미로를 달리며 방어 프로그램을 피하고 금고를 털어요.</p>`)}
-    ${card('arena', 'var(--amber)', 'blade', 1, '아레나', 2, `<div class="row"><span class="px" style="font-size:24px;color:var(--amber)">${S.arena.score}</span><span class="tag" style="color:${tier[2]}">${tier[1]}</span></div><div class="sub">오늘 도전 ${S.arena.tries}/5 · ${S.arena.w}승 ${S.arena.l}패</div>`)}
-  </div></div>`;
-};
 ACT.op = k => {
   const need = { building: 4, bounty: 7, netdive: 6, arena: 2 }[k];
   if (repLv() < need) { toast(`평판 LV.${need}에 열려요. 의뢰로 평판을 쌓으세요`, 'bad'); return; }
@@ -412,8 +253,9 @@ function openArena() {
 }
 ACT.arenaFight = v => {
   const a = S.arena; if (a.tries <= 0) { toast('오늘 도전을 다 썼어요. 하루를 마치면 채워져요', 'bad'); return; }
-  const o = a.opps[+v]; closeModal(); a.tries--;
+  const o = a.opps[+v]; closeModal();
   startBattle({
+    pay: () => { a.tries--; },
     title: `아레나 · ${o.n}`, enemyName: o.n, allies: squadAllies(), enemies: o.team, time: 75,
     onEnd: res => {
       const myLv = 1 + Math.max(0, (a.score - 1000) / 40);
@@ -441,9 +283,10 @@ function openBounty() {
 }
 ACT.bountyFight = () => {
   const bt = S.bounty; if (bt.clues < 3 || bt.tracks <= 0 || bt.done) return;
-  closeModal(); bt.tracks--;
+  closeModal();
   const lv = bt.lv || 8 + bt.week * 3;
   startBattle({
+    pay: () => { bt.tracks--; },
     title: `현상금 사냥 · ${MERCS[bt.boss].n}`, enemyName: `현상수배범 ${MERCS[bt.boss].n}`, allies: squadAllies(),
     enemies: [{ id: bt.boss, slot: 0, boss: true, lv, frame: 2, hp: bt.hp }], time: 75,
     onEnd: res => {
@@ -522,7 +365,7 @@ ACT.raidStart = () => {
   S.building.run = { floor: 1, squad: sq, hp, buffs: { atk: 0, def: 0, spd: 0, crit: 0, gauge: 0, regen: 0 }, imps: [], loot: { credits: 0, chips: 0, alloy: 0, biogel: 0, neural: 0 }, log: ['빌딩 1층 로비에 진입했어요.'], paths: genPaths(1) };
   save(); openBuilding();
 };
-function raidAllies(run) { return run.squad.map((id, slot) => id && (run.hp[slot] ?? 0) > 0 ? { id, slot, g: S.roster[id].g, imp: S.roster[id].imp, hp: run.hp[slot] } : null).filter(Boolean); }
+function raidAllies(run) { return run.squad.map((id, slot) => id && (run.hp[slot] ?? 0) > 0 ? { id, slot, g: S.roster[id].g, imp: S.roster[id].imp, mlv: S.roster[id].lv || 1, hp: run.hp[slot] } : null).filter(Boolean); }
 function raidNext(run, msg) {
   run.log.unshift(msg); run.floor++; S.building.best = Math.max(S.building.best, run.floor - 1);
   if (run.buffs.regen) for (const s in run.hp) if (run.hp[s] > 0) run.hp[s] = Math.min(1, run.hp[s] + run.buffs.regen);

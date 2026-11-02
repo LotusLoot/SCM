@@ -38,16 +38,16 @@ function squadAllies(hpMap) {
   const out = [];
   S.squad.forEach((id, slot) => {
     if (!id) return; const f = hpMap ? hpMap[slot] : 1; if (f !== undefined && f <= 0) return;
-    const o = S.roster[id]; out.push({ id, slot, g: o.g, imp: o.imp, hp: f === undefined ? 1 : f });
+    const o = S.roster[id]; out.push({ id, slot, g: o.g, imp: o.imp, mlv: o.lv || 1, hp: f === undefined ? 1 : f });
   });
   return out;
 }
 function mkUnit(side, d, buffs) {
   const m = MERCS[d.id];
   const real = side === 'a' || d.real; // d.real: 다른 플레이어의 실제 용병 (아레나·구역 방어 팀)
-  const st = real ? mercStats(d.id, d.g, d.imp) : mercStats(d.id, 1, null, lvMul(d.lv));
+  const st = real ? mercStats(d.id, d.g, d.imp, 1, d.mlv || 1) : mercStats(d.id, 1, null, lvMul(d.lv));
   if (!real) { st.hp *= .88; st.atk *= .9; }
-  if (buffs) { st.atk *= 1 + (buffs.atk || 0); st.def *= 1 + (buffs.def || 0); st.spd *= 1 + (buffs.spd || 0); st.crit += buffs.crit || 0; }
+  if (buffs) { st.hp *= 1 + (buffs.hp || 0); st.atk *= 1 + (buffs.atk || 0); st.def *= 1 + (buffs.def || 0); st.spd *= 1 + (buffs.spd || 0); st.crit += buffs.crit || 0; }
   if (d.boss) { st.hp *= 9; st.atk *= 1.7; st.def *= 1.3; }
   const pos = d.boss ? [73, 78] : APOS[d.slot];
   const u = {
@@ -58,19 +58,29 @@ function mkUnit(side, d, buffs) {
     timer: rnd(.2, 1.2), gauge: side === 'a' ? (buffs && buffs.gauge ? 30 : 0) : rnd(0, 20), aiDelay: rnd(.3, 1.6),
     st: { stun: 0, mark: 0, taunt: 0, charm: 0, freeze: 0, weak: 0 }, tauntBy: null, shield: 0, shieldT: 0,
     dead: false, deadT: 0, lunge: 0, lungeDir: 1, flash: 0, ox: 0, oy: 0,
+    dmgDone: 0, dmgTaken: 0, healDone: 0, first: true, mlv: d.mlv || 1, g: d.g || 1,
   };
   u.hp = Math.round(u.maxHp * (d.hp === undefined ? 1 : d.hp));
   return u;
 }
 
-function startBattle(cfg) {
+function addBuffs(a, b) { const o = { ...(a || {}) }; for (const k in b) o[k] = (o[k] || 0) + b[k]; return o; }
+function startBattle(cfg) { if (cfg.skipPre) return runBattle(cfg); preBattle(cfg); }
+function runBattle(cfg) {
+  if (cfg.pay) { cfg.pay(); cfg.pay = null; save(); }
   const pr = battlePrefs();
   B = {
     cfg, t: 0, time: cfg.time || 75, speed: pr.sp || 1, auto: !!pr.auto, ended: false, shake: 0, retreatArm: 0,
     units: [], fx: [], turrets: [], q: [], wall: { a: 0, e: 0 },
   };
-  for (const a of cfg.allies) B.units.push(mkUnit('a', a, cfg.buffs));
-  for (const e of cfg.enemies) B.units.push(mkUnit('e', e));
+  B.syn = synergyOf(cfg.allies.map(a => a.id));
+  const ebuff = cfg.enemies.some(e => e.real) ? synergyOf(cfg.enemies.map(e => e.id)).buff : null;
+  for (const a of cfg.allies) B.units.push(mkUnit('a', a, addBuffs(cfg.buffs, B.syn.buff)));
+  for (const e of cfg.enemies) B.units.push(mkUnit('e', e, ebuff));
+  for (const u of B.units) { // 전투 시작 패시브
+    if (u.id === 'ironwall') B.units.filter(f => f.side === u.side && f.slot < 2 && !f.boss).forEach(f => { f.def *= 1.15; });
+    if (u.id === 'halo') B.units.filter(f => f.side === u.side).forEach(f => { f.shield += Math.round(f.maxHp * .1); f.shieldT = 999; });
+  }
   B.startA = sideHp('a'); B.startE = sideHp('e');
   B.maxA = B.units.filter(u => u.side === 'a').reduce((s, u) => s + u.maxHp, 0);
   B.maxE = B.units.filter(u => u.side === 'e').reduce((s, u) => s + u.maxHp, 0);
@@ -175,7 +185,8 @@ function update(gdt, rdt) {
     if (u.shieldT > 0) { u.shieldT -= gdt; if (u.shieldT <= 0) u.shield = 0; }
     u.lunge = Math.max(0, u.lunge - gdt); u.flash = Math.max(0, u.flash - gdt);
     const disabled = u.st.stun > 0 || u.st.freeze > 0;
-    if (!disabled) u.gauge = Math.min(100, u.gauge + 4 * gdt);
+    if (!disabled) addGauge(u, 4 * gdt);
+    if (u.id === 'nano') friendsOf(u).forEach(f => { if (f.hp < f.maxHp) { const h = f.maxHp * .006 * gdt; f.hp = Math.min(f.maxHp, f.hp + h); u.healDone += h; } });
     if (disabled) continue;
     u.timer -= gdt * u.spd / 100;
     if (u.timer <= 0) { act(u); u.timer = 1.7; }
@@ -205,7 +216,7 @@ function act(u) {
     if (fr && fr.hp / fr.maxHp < .7 && u.st.charm <= 0) {
       heal(u, fr, u.atk * 2.4); const a = upos(u), b = upos(fr);
       fx({ k: 'beam', x1: a.x, y1: a.y - unitH(u) * .6, x2: b.x, y2: b.y - unitH(fr) * .5, c: '#7DFF6A', w: 2, d: .2 });
-      u.gauge = Math.min(100, u.gauge + 8); return;
+      addGauge(u, 8); return;
     }
   }
   const tg = pickTarget(u); if (!tg) return;
@@ -214,31 +225,41 @@ function act(u) {
   if (melee) { u.lunge = .2; u.lungeDir = b.x > a.x ? 1 : -1; fx({ k: 'slash', x: b.x, y: b.y - unitH(tg) * .5, c: u.side === 'a' ? '#2DE2E6' : '#FF4B5C', d: .18, r: 18 }); }
   else fx({ k: 'beam', x1: a.x + (b.x > a.x ? 16 : -16), y1: a.y - unitH(u) * .62, x2: b.x, y2: b.y - unitH(tg) * .5, c: u.role === 'engineer' ? '#FFB627' : (u.side === 'a' ? '#2DE2E6' : '#FF4B5C'), w: u.role === 'sniper' ? 3 : 2, d: .2 });
   const mult = { guardian: .9, assault: 1, sniper: 1.15, hacker: .9, medic: .6, engineer: 1 }[u.role];
-  hit(u, tg, mult, {});
+  hit(u, tg, mult * (u.id === 'hawkeye' && u.first ? 2.5 : 1), {}); u.first = false;
   if (u.role === 'hacker' && Math.random() < .3) tg.st.weak = 3;
-  u.gauge = Math.min(100, u.gauge + 8);
+  if (u.id === 'glitch' && Math.random() < .15 && !tg.boss) tg.st.stun = Math.max(tg.st.stun, .8);
+  if (u.id === 'neuro') tg.gauge = Math.max(0, tg.gauge - 8);
+  if (u.id === 'volt') { const o = foesOf(u).filter(f => f !== tg); if (o.length) { const t2 = pick(o), c = upos(t2); fx({ k: 'beam', x1: b.x, y1: b.y - unitH(tg) * .5, x2: c.x, y2: c.y - unitH(t2) * .5, c: '#FFD54A', w: 2, d: .18 }); hit(u, t2, .35, { extra: 1 }); } }
+  if (u.id === 'swarm') later(.15, () => { if (!tg.dead && !u.dead) { const c = upos(tg); fx({ k: 'missile', x1: a.x, y1: a.y - unitH(u), x2: c.x, y2: c.y - unitH(tg) * .5, c: '#5BC0FF', d: .2 }); hit(u, tg, .25, { extra: 1 }); } });
+  addGauge(u, 8);
 }
+function addGauge(u, n) { u.gauge = Math.min(100, u.gauge + n * (u.id === 'chrono' ? 1.3 : 1)); }
 function hit(src, tg, mult, o) {
   if (tg.dead) return 0;
-  const A = src.atk * (src.st.weak > 0 ? .8 : 1);
+  const A = src.atk * (src.st.weak > 0 ? .8 : 1) * (src.id === 'pug' && src.hp < src.maxHp * .5 ? 1.35 : 1);
   let dmg = A * mult * A / (A + tg.def) * elemMul(src.el, tg.el) * rnd(.92, 1.08);
   const crit = !o.noCrit && Math.random() * 100 < src.crit; if (crit) dmg *= 1.6;
   if (tg.st.mark > 0) dmg *= 2;
+  if (src.id === 'reaper' && tg.hp < tg.maxHp * .3) dmg *= 1.5;
+  if (src.id === 'specter' && (tg.st.stun > 0 || tg.st.freeze > 0 || tg.st.mark > 0)) dmg *= 1.3;
   let combo = false;
   if (o.ult && (tg.st.stun > 0 || tg.st.freeze > 0)) { dmg *= src.role === 'sniper' ? 2 : 1.5; combo = true; }
   if (B.wall[tg.side] > 0) dmg *= .3;
   dmg = Math.max(1, Math.round(dmg));
   let left = dmg;
   if (tg.shield > 0) { const ab = Math.min(tg.shield, left); tg.shield -= ab; left -= ab; }
-  tg.hp -= left; tg.flash = .1; tg.gauge = Math.min(100, tg.gauge + 4);
+  tg.hp -= left; tg.flash = .1; addGauge(tg, 4);
+  src.dmgDone += dmg; tg.dmgTaken += dmg;
+  if (B.cv) sfx(crit ? 'crit' : 'hit');
   const p = upos(tg);
   fx({ k: 'txt', x: p.x + rnd(-12, 12), y: p.y - unitH(tg) - 6, s: crit ? String(dmg) + '!' : String(dmg), c: crit ? '#FFB627' : (tg.side === 'a' ? '#FF9AC8' : '#FFFFFF'), big: crit || o.ult, d: .9 });
   if (combo) fx({ k: 'txt', x: p.x, y: p.y - unitH(tg) - 30, s: 'COMBO', c: '#FF3D9A', big: true, d: .9 });
-  if (tg.hp <= 0) { tg.hp = 0; tg.dead = true; tg.deadT = 0; }
+  if (tg.hp <= 0) { tg.hp = 0; tg.dead = true; tg.deadT = 0; if (src.id === 'eclipse') addGauge(src, 40); }
+  if (crit && src.id === 'blade' && !o.extra && !tg.dead) hit(src, tg, mult * .3, { extra: 1, noCrit: 1 });
   return dmg;
 }
 function heal(src, tg, amt) {
-  if (tg.dead) return; amt = Math.round(amt); tg.hp = Math.min(tg.maxHp, tg.hp + amt);
+  if (tg.dead) return; amt = Math.round(amt); const before = tg.hp; tg.hp = Math.min(tg.maxHp, tg.hp + amt); src.healDone += tg.hp - before;
   const p = upos(tg); fx({ k: 'txt', x: p.x, y: p.y - unitH(tg) - 6, s: '+' + amt, c: '#7DFF6A', d: .9 });
 }
 function fx(e) { e.t = 0; B.fx.push(e); }
@@ -249,7 +270,8 @@ function tryUlt(u, manual) {
   if (u.st.stun > 0 || u.st.freeze > 0) { if (manual) toast('기절 중이라 궁극기를 쓸 수 없어요', 'bad'); return; }
   u.gauge = 0;
   const foes = foesOf(u), fr = friendsOf(u), p = upos(u), col = ELEMS[u.el].c;
-  banner(u);
+  banner(u); if (B.cv) sfx(['blade', 'hawkeye', 'swarm', 'eclipse', 'glitch'].includes(u.id) ? 'boom' : 'ult');
+  if (u.side === 'a' && u.st.charm <= 0) track('ult');
   const ring = (t, c = col, r = 90) => { const q = upos(t); fx({ k: 'ring', x: q.x, y: q.y - unitH(t) * .45, c, r, d: .5 }); };
   switch (u.id) {
     case 'ironwall': B.wall[u.side] = 3; fr.forEach(f => ring(f, '#5BC0FF', 60)); break;
@@ -278,9 +300,9 @@ function tryUlt(u, manual) {
   }
 }
 function banner(u) {
-  const d = document.createElement('div'); d.className = 'ultband';
+  const d = document.createElement('div'); d.className = 'ultband ' + (u.side === 'a' && u.st.charm <= 0 ? 'ally' : 'foe');
   const c = u.side === 'a' && u.st.charm <= 0 ? 'var(--pink)' : 'var(--red)';
-  d.innerHTML = `<div style="text-align:center"><small>${u.side === 'a' ? 'ULTIMATE' : 'ENEMY ULTIMATE'} · ${esc(u.m.n)}</small><br><b style="color:${c};text-shadow:0 0 18px ${ELEMS[u.el].c}">${esc(u.m.ult)}</b></div>`;
+  d.innerHTML = `<img class="cutin" src="${imgSrc(u.id, u.frame)}" alt=""><div class="ubt"><small>${u.side === 'a' ? 'ULTIMATE' : 'ENEMY ULTIMATE'} · ${esc(u.m.n)}</small><b style="color:${c};text-shadow:0 0 18px ${ELEMS[u.el].c}">${esc(u.m.ult)}</b></div>`;
   $('#b-field', B.el).appendChild(d); setTimeout(() => d.remove(), 1000);
 }
 
@@ -353,7 +375,7 @@ function drawUnit(x, u, rdt) {
   if (u.st.stun > 0) tags.push(['기절', '#A874FF']); if (u.st.freeze > 0) tags.push(['정지', '#FFD54A']);
   if (u.st.mark > 0) tags.push(['표식', '#FF3D9A']); if (u.st.charm > 0) tags.push(['장악', '#FF7AB8']);
   if (B.wall[u.side] > 0) tags.push(['철벽', '#5BC0FF']); if (u.st.taunt > 0) tags.push(['도발', '#FFB627']); if (u.st.weak > 0) tags.push(['약화', '#A39DD0']);
-  x.font = '700 10px "IBM Plex Sans KR", sans-serif'; let tx = px - (tags.length * 30) / 2;
+  x.font = '700 11px "IBM Plex Sans KR", sans-serif'; let tx = px - (tags.length * 30) / 2;
   for (const [t, c] of tags) { x.fillStyle = c; x.fillRect(tx, by - 15, 28, 13); x.fillStyle = '#07060F'; x.fillText(t, tx + 3, by - 5); tx += 30; }
 }
 function drawFx(x, e, rdt) {
@@ -363,7 +385,7 @@ function drawFx(x, e, rdt) {
     case 'beam': x.globalAlpha = 1 - k; x.strokeStyle = e.c; x.lineWidth = e.w; x.shadowColor = e.c; x.shadowBlur = 10; x.beginPath(); x.moveTo(e.x1, e.y1); x.lineTo(e.x2, e.y2); x.stroke(); break;
     case 'slash': x.globalAlpha = 1 - k; x.strokeStyle = e.c; x.lineWidth = 3; x.shadowColor = e.c; x.shadowBlur = 12; x.beginPath(); x.arc(e.x, e.y, e.r, -2.2 + k, -.4 + k); x.stroke(); break;
     case 'ring': x.globalAlpha = (1 - k) * .9; x.strokeStyle = e.c; x.lineWidth = 3; x.shadowColor = e.c; x.shadowBlur = 14; x.beginPath(); x.arc(e.x, e.y, e.r * (.3 + k * .7), 0, 7); x.stroke(); break;
-    case 'txt': x.globalAlpha = k > .7 ? (1 - k) / .3 : 1; x.font = `${e.big ? 20 : 14}px Silkscreen, monospace`; x.textAlign = 'center'; x.lineWidth = 3; x.strokeStyle = '#07060F';
+    case 'txt': x.globalAlpha = k > .7 ? (1 - k) / .3 : 1; x.font = `700 ${e.big ? 21 : 15}px "Chakra Petch", "IBM Plex Sans KR", sans-serif`; x.textAlign = 'center'; x.lineWidth = 3; x.strokeStyle = '#07060F';
       x.strokeText(e.s, e.x, e.y - 38 * k); x.fillStyle = e.c; x.fillText(e.s, e.x, e.y - 38 * k); break;
     case 'missile': { const mx = e.x1 + (e.x2 - e.x1) * k, my = e.y1 + (e.y2 - e.y1) * k - Math.sin(k * Math.PI) * 60;
       x.fillStyle = e.c; x.shadowColor = e.c; x.shadowBlur = 10; x.fillRect(mx - 3, my - 3, 6, 6); if (k >= 1) { x.beginPath(); x.arc(e.x2, e.y2, 22, 0, 7); x.globalAlpha = .6; x.fill(); } break; }
@@ -384,13 +406,77 @@ function finish(kind) {
   const map = { win: ['승리', 'var(--lime)'], lose: ['패배', 'var(--red)'], timeout: ['시간 초과', 'var(--amber)'], retreat: ['후퇴', 'var(--dim)'] };
   const d = document.createElement('div'); d.className = 'endband'; d.innerHTML = `<b style="color:${map[kind][1]}">${map[kind][0]}</b>`;
   $('#b-field', B.el).appendChild(d);
-  const res = { win: kind === 'win', kind, allyHp: {}, enemyHp: 0 };
+  const res = { win: kind === 'win', kind, allyHp: {}, enemyHp: 0, time: B.t };
   B.units.filter(u => u.side === 'a').forEach(u => { res.allyHp[u.slot] = u.dead ? 0 : u.hp / u.maxHp; });
   res.enemyHp = sideHp('e') / B.maxE;
-  const cfg = B.cfg;
+  res.stars = res.win ? 1 + (B.units.every(u => u.side !== 'a' || !u.dead) ? 1 : 0) + (B.t <= 45 ? 1 : 0) : 0;
+  const cfg = B.cfg, bb = B;
+  if (kind === 'retreat') { setTimeout(() => { closeBattle(bb); cfg.onEnd(res); refresh(); }, 350); return; }
+  sfx(res.win ? 'win' : 'lose');
   setTimeout(() => {
-    cancelAnimationFrame(B.raf); window.removeEventListener('keydown', B.onKey); B.ro.disconnect(); B.el.remove(); B = null;
-    if (res.win) S.rec.w++; else if (kind !== 'retreat') S.rec.l++;
-    cfg.onEnd(res); refresh();
-  }, kind === 'retreat' ? 400 : 1100);
+    if (res.win) { S.rec.w++; track('win'); } else S.rec.l++;
+    GRANT_LOG = [];
+    try {
+      if (res.win && !cfg.noExp) { const lv = cfg.enemies.reduce((a, e) => a + (e.lv || 6), 0) / cfg.enemies.length; grant({ exp: Math.round(60 + lv * 30) }); }
+      cfg.onEnd(res);
+    } catch (e) { console.error(e); }
+    const logs = GRANT_LOG; GRANT_LOG = null;
+    save(); showResult(bb, res, logs, map[kind]);
+  }, 900);
+}
+function closeBattle(bb) { cancelAnimationFrame(bb.raf); window.removeEventListener('keydown', bb.onKey); bb.ro.disconnect(); bb.el.remove(); if (B === bb) B = null; }
+function showResult(bb, res, logs, head) {
+  const allies = bb.units.filter(u => u.side === 'a').sort((a, b) => a.slot - b.slot);
+  const mx = Math.max(1, ...allies.map(u => Math.max(u.dmgDone, u.dmgTaken, u.healDone)));
+  const mvp = allies.slice().sort((a, b) => (b.dmgDone + b.healDone * 1.2 + b.dmgTaken * .4) - (a.dmgDone + a.healDone * 1.2 + a.dmgTaken * .4))[0];
+  const cfg = bb.cfg;
+  const stars = cfg.stars ? `<div class="stars">${[0, 1, 2].map(i => `<i class="${i < res.stars ? 'on' : ''}" style="animation-delay:${.2 + i * .25}s"></i>`).join('')}</div>
+    <div class="starhint"><span class="${res.win ? 'ok' : ''}">승리</span><span class="${allies.every(u => !u.dead) && res.win ? 'ok' : ''}">아무도 쓰러지지 않기</span><span class="${res.win && res.time <= 45 ? 'ok' : ''}">45초 안에</span></div>` : '';
+  const rows = allies.map(u => `<div class="mrow ${u === mvp ? 'mvp' : ''}"><div class="face"><img src="${imgSrc(u.id, u.frame)}" alt=""></div>
+    <div class="mbars"><div class="mn"><b>${esc(u.m.n)}</b>${u === mvp ? '<span class="tag fill" style="background:var(--amber)">MVP</span>' : ''}${u.dead ? '<span class="dim" style="font-size:11px">쓰러짐</span>' : ''}</div>
+    <div class="mb"><i style="width:${u.dmgDone / mx * 100}%;background:var(--pink)"></i><span class="px">${fmt(u.dmgDone)}</span></div>
+    <div class="mb"><i style="width:${u.dmgTaken / mx * 100}%;background:var(--cyan)"></i><span class="px">${fmt(u.dmgTaken)}</span></div>
+    ${u.healDone > 0 ? `<div class="mb"><i style="width:${u.healDone / mx * 100}%;background:var(--lime)"></i><span class="px">${fmt(u.healDone)}</span></div>` : ''}</div></div>`).join('');
+  const tip = res.win ? '' : `<p class="sub" style="color:var(--amber)">${res.kind === 'timeout' ? '시간이 모자랐어요. 딜러를 늘리거나 궁극기를 빨리 쓰세요.' : '용병 레벨을 올리거나, 적 속성에 강한 용병으로 배치를 바꿔 보세요.'}</p>`;
+  const el = document.createElement('div'); el.className = 'result';
+  el.innerHTML = `<div class="rbox box brk" style="--c:${head[1]}"><div class="rhead" style="color:${head[1]}">${head[0]}</div>${stars}
+    ${mvp ? `<div class="mvpcard"><img src="${imgSrc(mvp.id, mvp.frame)}" alt=""><div><div class="eyebrow" style="color:var(--amber)">MVP</div><div class="h2">${esc(mvp.m.n)}</div><div class="sub">피해 ${fmt(mvp.dmgDone)}${mvp.healDone ? ` · 회복 ${fmt(mvp.healDone)}` : ''}</div></div></div>` : ''}
+    <div class="legend"><span><i style="background:var(--pink)"></i>준 피해</span><span><i style="background:var(--cyan)"></i>받은 피해</span><span><i style="background:var(--lime)"></i>회복</span><span class="px dim">${Math.round(res.time)}초</span></div>
+    <div class="meter">${rows}</div>${tip}
+    ${logs.length ? `<div class="rewards">${logs.map(t => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
+    <div class="row rbtns" style="justify-content:center;flex-wrap:wrap">${cfg.retry ? '<button class="btn gray" id="r-retry">다시 도전</button>' : ''}${cfg.next && res.win ? '<button class="btn" id="r-next">다음 스테이지</button>' : ''}<button class="btn ${cfg.next && res.win ? 'gray' : ''}" id="r-ok">확인</button></div></div>`;
+  bb.el.appendChild(el);
+  const done = then => { closeBattle(bb); refresh(); if (cfg.after) cfg.after(res); if (then) then(); };
+  $('#r-ok', el).onclick = () => done();
+  if (cfg.retry) $('#r-retry', el).onclick = () => done(cfg.retry);
+  if (cfg.next && res.win) $('#r-next', el).onclick = () => done(cfg.next);
+}
+
+/* --- 전투 전 정보 --- */
+function preBattle(cfg) {
+  const mkPow = (side, d, b) => { const u = mkUnit(side, d, b); return unitPower({ hp: u.maxHp, atk: u.atk, def: u.def, spd: u.spd, crit: u.crit }); };
+  const syn = synergyOf(cfg.allies.map(a => a.id));
+  const ally = Math.round(cfg.allies.reduce((s, a) => s + mkPow('a', a, addBuffs(cfg.buffs, syn.buff)), 0));
+  const foe = Math.round(cfg.enemies.reduce((s, e) => s + mkPow('e', e, null), 0));
+  const r = ally / Math.max(1, foe);
+  const verdict = r >= 1.15 ? ['유리', 'var(--lime)'] : r >= .9 ? ['비슷', 'var(--amber)'] : r >= .7 ? ['어려움', 'var(--red)'] : ['위험', 'var(--red)'];
+  const els = {}; cfg.enemies.forEach(e => { const x = MERCS[e.id].el; els[x] = (els[x] || 0) + 1; });
+  const beats = { plasma: 'mech', mech: 'bio', bio: 'plasma', quantum: 'void', void: 'quantum' };
+  const counter = Object.keys(els).map(x => Object.keys(beats).find(k => beats[k] === x)).filter(Boolean);
+  const advice = Object.keys(els).map(x => `${ELEMS[x].n} ${els[x]}`).join(' · ');
+  const tip = counter.length ? `적 속성: ${advice}. ${[...new Set(counter)].map(k => ELEMS[k].n).join('·')} 속성 용병이 유리해요.` : '';
+  const face = (d, side) => `<div class="pf ${side}"><img src="${imgSrc(d.id, side === 'a' ? frameOf(d.g) : (d.frame || 0))}" alt=""><span class="tag fill e-${MERCS[d.id].el}">${ELEMS[MERCS[d.id].el].n}</span>${side === 'a' ? `<span class="lvb px">${d.mlv || 1}</span>` : ''}</div>`;
+  openModal({
+    label: 'BRIEFING', title: cfg.title, c: 'var(--cyan)', wide: true,
+    html: `<div class="vs"><div><div class="eyebrow" style="color:var(--lime)">OUR SQUAD</div><div class="pfrow">${cfg.allies.map(a => face(a, 'a')).join('')}</div><div class="px pw" style="color:var(--lime)">${fmt(ally)}</div></div>
+      <div class="vsmid"><span class="px">VS</span><b style="color:${verdict[1]}">${verdict[0]}</b></div>
+      <div><div class="eyebrow" style="color:var(--red)">${esc(cfg.enemyName)}</div><div class="pfrow">${cfg.enemies.map(e => face(e, 'e')).join('')}</div><div class="px pw" style="color:var(--red)">${fmt(foe)}</div></div></div>
+      ${syn.list.length ? `<div class="synrow">${syn.list.map(x => `<span class="syn" style="--sc:${x.c}"><b>${x.n}</b>${x.d}</span>`).join('')}</div>` : '<p class="sub">진형 시너지 없음. 같은 속성 2명, 가디언+메딕 같은 조합으로 보너스를 받아요.</p>'}
+      ${tip ? `<p class="sub">${tip}</p>` : ''}${cfg.note ? `<p class="sub" style="color:var(--amber)">${cfg.note}</p>` : ''}
+      <div class="row wrap"><button class="btn" id="pb-go" style="flex:1">출격</button><button class="btn gray" id="pb-edit">편성 바꾸기</button></div>`,
+    onMount: b => {
+      $('#pb-go', b).onclick = () => { closeModal(true); runBattle(cfg); };
+      $('#pb-edit', b).onclick = () => { closeModal(true); TAB = 'hq'; refresh(false); toast('본부에서 용병을 눌러 자리를 바꿀 수 있어요'); };
+    },
+  });
 }

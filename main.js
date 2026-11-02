@@ -33,10 +33,10 @@ function intro() {
       <div class="box" style="display:flex;flex-direction:column;gap:6px;font-size:13px">
         <div><b style="color:var(--pink)">전투</b> 자동으로 진행돼요. 궁극기만 직접 타이밍을 골라 눌러요 (PC는 숫자키 1~5).</div>
         <div><b style="color:var(--cyan)">조합</b> 해커가 적을 기절시킨 순간 스나이퍼 궁극기를 쓰면 큰 데미지.</div>
-        <div><b style="color:var(--amber)">성장</b> 의뢰로 크레딧과 평판을 벌고, 영입으로 용병을 모아 승급해요.</div>
+        <div><b style="color:var(--amber)">성장</b> 메인 작전과 의뢰로 보상을 벌고, 용병 레벨을 올리고, 영입으로 모아 승급해요. 자리를 비워도 순찰 보상이 쌓여요.</div>
         <div><b style="color:var(--lime)">속성</b> 플라즈마 → 기계 → 바이오 → 플라즈마 (유리하면 1.5배).</div></div>
-      <button class="btn block" data-a="closeModal">의뢰판 보러 가기</button>`,
-    onClose: () => { S.seen.intro = 1; TAB = 'job'; refresh(false); },
+      <button class="btn block" data-a="closeModal">메인 작전 시작하기</button>`,
+    onClose: () => { S.seen.intro = 1; TAB = 'ops'; refresh(false); if (attendReady()) setTimeout(() => ACT.attend(), 300); },
   });
 }
 
@@ -49,8 +49,9 @@ async function boot() {
   for (const k in f) if (S[k] === undefined) S[k] = f[k];
   drawBgCity(); addEventListener('resize', () => { clearTimeout(boot._t); boot._t = setTimeout(drawBgCity, 200); });
   refresh(false);
-  if (!S.seen.intro) intro();
-  setInterval(() => { if (ONLINE && netDaily()) { softRefresh(); return; } if (TAB === 'job' && !$('#modal') && !B && !D) refresh(); else { renderTabs(); } }, 20000);
+  migrate(S);
+  if (!S.seen.intro) intro(); else if (attendReady()) setTimeout(() => ACT.attend(), 400);
+  setInterval(() => { if (ONLINE && netDaily()) { softRefresh(); return; } if ((TAB === 'job' || TAB === 'hq') && !$('#modal') && !B && !D) refresh(); else { renderTabs(); } }, 20000);
   preloadImages();
 }
 const start = () => boot();

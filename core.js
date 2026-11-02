@@ -18,18 +18,19 @@ function freshState() {
   };
   for (const id of st.squad) st.roster[id] = newMerc();
   st.jobs = genJobs(st);
+  migrate(st); st.exp = 1500;
   return st;
 }
-const newMerc = () => ({ g: 1, ess: 0, imp: { eye: 0, arm: 0, nerve: 0, skin: 0 } });
+const newMerc = () => ({ g: 1, lv: 1, ess: 0, imp: { eye: 0, arm: 0, nerve: 0, skin: 0 } });
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* 저장 불가 환경 */ } }
 function load() {
-  try { const raw = localStorage.getItem(SAVE_KEY); if (raw) { const o = JSON.parse(raw); if (o && o.v === 1) return o; } } catch (e) { }
+  try { const raw = localStorage.getItem(SAVE_KEY); if (raw) { const o = JSON.parse(raw); if (o && o.v === 1) return migrate(o); } } catch (e) { }
   return null;
 }
 function toCode() { return 'SCM1.' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); }
 function fromCode(c) {
   c = c.trim(); if (!c.startsWith('SCM1.')) throw new Error('bad');
-  const o = JSON.parse(decodeURIComponent(escape(atob(c.slice(5))))); if (!o || o.v !== 1) throw new Error('bad'); return o;
+  const o = JSON.parse(decodeURIComponent(escape(atob(c.slice(5))))); if (!o || o.v !== 1) throw new Error('bad'); return migrate(o);
 }
 
 /* ===== 평판 / 크루 ===== */
@@ -45,21 +46,24 @@ function addRep(n) {
   }
 }
 function addCrewXp(n) { if (!S.crew) return; const b = crewLv(); S.crewXp += n; if (crewLv() > b) toast(`크루 LV.${crewLv()}! 크레딧 보너스 +${crewBuff()}%`, 'good'); }
+let GRANT_LOG = null; // 배열이면 전투 결과 화면에 모아 보여 줘요
 function grant(r, quiet) {
   const parts = [];
+  if (r.exp) { S.exp += r.exp; parts.push(`전투 데이터 +${fmt(r.exp)}`); }
   if (r.credits) { const c = Math.round(r.credits * (1 + crewBuff() / 100)); S.credits += c; parts.push(`+${fmt(c)}C`); }
   if (r.chips) { S.chips += r.chips; parts.push(`데이터칩 +${r.chips}`); }
   if (r.mats) for (const k in r.mats) if (r.mats[k]) { S.mats[k] += r.mats[k]; parts.push(`${MATS[k]} +${r.mats[k]}`); }
   if (r.rep) { parts.push(`평판 +${r.rep}`); }
   if (r.rep) addRep(r.rep);
   if (r.crew) addCrewXp(r.crew);
-  if (!quiet && parts.length) toast(parts.join(' · '), 'gold');
+  if (GRANT_LOG) GRANT_LOG.push(...parts);
+  else if (!quiet && parts.length) toast(parts.join(' · '), 'gold');
   return parts.join(' · ');
 }
 
 /* ===== 능력치 ===== */
-function mercStats(id, g, imp, lvMul = 1) {
-  const m = MERCS[id], r = ROLES[m.role], gm = GRADES[g].m * (m.legend ? 1.2 : 1) * lvMul;
+function mercStats(id, g, imp, lvMul = 1, mlv = 1) {
+  const m = MERCS[id], r = ROLES[m.role], gm = GRADES[g].m * (m.legend ? 1.2 : 1) * lvMul * lvStat(mlv);
   imp = imp || { eye: 0, arm: 0, nerve: 0, skin: 0 };
   return {
     hp: Math.round(r.hp * gm), atk: Math.round(r.atk * gm * (1 + imp.arm * .05)),
@@ -67,10 +71,10 @@ function mercStats(id, g, imp, lvMul = 1) {
     crit: Math.min(75, r.crit + imp.eye * 2 + (g - 1)),
   };
 }
-const ownStats = id => { const o = S.roster[id]; return mercStats(id, o.g, o.imp); };
+const ownStats = id => { const o = S.roster[id]; return mercStats(id, o.g, o.imp, 1, o.lv); };
 const unitPower = s => s.hp * .1 + s.atk * 1.6 + s.def * 1.2 + s.spd * .6 + s.crit * 4;
 const squadPower = (sq = S.squad) => Math.round(sq.filter(Boolean).reduce((a, id) => a + unitPower(ownStats(id)), 0));
-const lvMul = lv => 1 + .13 * (Math.max(1, lv) - 1);
+const lvMul = lv => Math.pow(1.09, Math.max(1, lv) - 1);
 function teamPowerAt(lv) { // 같은 레벨 갱단 5명의 대략 전투력
   return Math.round(['guardian', 'assault', 'sniper', 'hacker', 'medic'].reduce((a, r) => a + unitPower(mercStats(COMMON_IDS.find(i => MERCS[i].role === r), 1, null, lvMul(lv))), 0));
 }
@@ -142,13 +146,16 @@ function mercCard(id, o = {}) {
   const m = MERCS[id], own = S.roster[id], g = o.g || (own ? own.g : 1), has = !!own || o.force;
   const cls = has ? 'g' + g : 'none';
   const dias = Array.from({ length: 7 }, (_, i) => `<i class="${i < g && has ? 'on' : ''}"></i>`).join('');
-  const gname = has ? GRADES[g].en : (m.legend ? 'LEGENDARY' : 'NOT HIRED');
-  const ess = own && own.ess ? `<span class="badge">${own.ess}</span>` : '';
+  const gname = has ? GRADES[g].n : (m.legend ? '전설 · 미보유' : '미보유');
+  const flag = o.flag ? `<span class="cflag">${o.flag}</span>` : '';
+  const lv = own && !o.noLv ? `<span class="clv">Lv ${own.lv || 1}</span>` : '';
+  const ess = own && own.ess ? `<span class="cess" title="정수">◆${own.ess}</span>` : '';
+  const pow = own && o.pow ? `<div class="cpow"><span>전투력</span><b>${fmt(unitPower(ownStats(id)))}</b></div>` : '';
   return `<div class="mcard ${cls} ${o.sel ? 'sel' : ''}" ${o.act ? `data-a="${o.act}" data-v="${id}"` : ''} tabindex="0" role="button" aria-label="${m.n}">
-    <div class="in"><div class="tl"><span class="tag fill e-${m.el}">${ELEMS[m.el].n}</span></div>
-    <div class="tr">${ess}${IC[m.role]}</div>${o.flag ? `<div class="flag">${o.flag}</div>` : ''}
+    <div class="in"><div class="ctop"><span class="tag fill e-${m.el}">${ELEMS[m.el].n}</span><span class="crole" title="${ROLES[m.role].n}">${IC[m.role]}</span></div>
     <div class="art"><img src="${imgSrc(id, has ? frameOf(g) : 0)}" alt="" loading="lazy" draggable="false"></div>
-    <div class="bt"><div class="nm">${m.n}</div><div class="dias">${dias}</div><div class="gname">${gname}</div></div></div></div>`;
+    <div class="bt"><div class="nmrow"><span class="nm">${m.n}</span>${flag}</div>
+      <div class="meta">${lv}<span class="gname">${gname}</span>${ess}</div><div class="dias">${dias}</div>${pow}</div></div></div>`;
 }
 const hexEmblem = (c, t, size = 34) => `<div class="hex" style="--c:${c};width:${size}px;height:${size}px;font-size:${Math.round(size * .44)}px">${esc(t)}</div>`;
 const lockLine = lv => `<span class="lockline">${IC.lock}평판 LV.${lv}에 열려요</span>`;
@@ -163,16 +170,16 @@ function renderTop() {
     <div class="tb-res">${resChip('credit', S.credits)}${resChip('chip', S.chips)}
       <div class="tb-mats">${resChip('alloy', S.mats.alloy)}${resChip('biogel', S.mats.biogel)}${resChip('neural', S.mats.neural)}</div></div>`;
 }
-const TABS = [['hq', '본부'], ['merc', '용병'], ['hire', '영입'], ['job', '의뢰'], ['city', '도시'], ['ops', '작전']];
+const TABS = [['hq', '본부'], ['merc', '용병'], ['ops', '출격'], ['job', '의뢰'], ['city', '도시'], ['hire', '영입']];
 let TAB = 'hq';
 function tabTodo(t) {
   const lv = repLv();
-  if (t === 'hq') return S.squad.some(x => !x);
-  if (t === 'merc') return Object.entries(S.roster).some(([id, o]) => o.ess > 0 && canPromote(id).ok);
+  if (t === 'hq') return S.squad.some(x => !x) || idleElapsed() >= 3600e3 || missionReady() || attendReady();
+  if (t === 'merc') return Object.entries(S.roster).some(([id, o]) => (o.ess > 0 && canPromote(id).ok) || (S.squad.includes(id) && o.lv < lvCap(o.g) && S.exp >= lvCost(o.lv).exp));
   if (t === 'hire') return S.credits >= 1000;
   if (t === 'job') return S.jobs.some(j => j.st === 'open' || (j.st === 'ship' && Date.now() >= j.until));
   if (t === 'city') return lv >= 3 && !!S.crew && (S.tickets > 0 || (!S.spClaimed && ownedDistricts().length > 0));
-  if (t === 'ops') return lv >= 2 && S.arena.tries > 0;
+  if (t === 'ops') return S.camp.n < CHAPTERS.length * STAGES_PER || (lv >= 2 && S.arena.tries > 0);
   return false;
 }
 function renderTabs() {
@@ -217,7 +224,7 @@ function endDay() {
       if (took) news(`${r.n}이(가) ${DISTRICTS[i].n}을(를) 차지했어요.`);
     }
   }
-  S.day++;
+  S.day++; onNewDay();
   S.tickets = 3; S.defenses = 3; S.spClaimed = false; S.arena.tries = 5; S.dive.left = 3; S.bounty.tracks = 3;
   const keep = S.jobs.filter(j => j.st === 'ship');
   S.jobs = keep.concat(genJobs(S)).slice(0, Math.max(6, keep.length + 4));
@@ -257,7 +264,8 @@ function rollOne(type) {
   S.pity[type]++;
   let legend = Math.random() < P.rate || S.pity[type] >= P.pity;
   if (legend) S.pity[type] = 0;
-  return legend ? pick(LEGEND_IDS) : pick(COMMON_IDS);
+  if (legend) return pick(LEGEND_IDS);
+  const pu = pickupId(); return Math.random() < .3 ? pu : pick(COMMON_IDS.filter(i => i !== pu));
 }
 function acquire(id) {
   const o = S.roster[id];

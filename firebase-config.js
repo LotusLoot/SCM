@@ -1,13 +1,12 @@
-/* Firebase 설정 — README.md의 2단계를 보고 아래 값을 채우세요.
-   비워 두면(null) 서버 없이 이 브라우저에만 저장되는 오프라인 모드로 돌아가요.
-
+/* SCM Firebase 설정 (프로젝트: scmgame)
+   이 값들은 웹에 공개돼도 괜찮아요. 데이터는 firestore.rules 보안 규칙이 지켜요.
+   null로 바꾸면 서버 없이 브라우저에만 저장되는 오프라인 모드로 돌아가요. */
 window.FIREBASE_CONFIG = {
-  apiKey: "AIza...",
-  authDomain: "내프로젝트.firebaseapp.com",
-  projectId: "내프로젝트",
-  storageBucket: "내프로젝트.appspot.com",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdef"
+  apiKey: "AIzaSyB0gyvtmFXYogbyhMp62yeZ7dHcv8dTYWU",
+  authDomain: "scmgame.firebaseapp.com",
+  projectId: "scmgame",
+  storageBucket: "scmgame.firebasestorage.app",
+  messagingSenderId: "877658924078",
+  appId: "1:877658924078:web:daefb74d64ad66cfd3ebbf",
+  measurementId: "G-NYRJ94FXR3"
 };
-*/
-window.FIREBASE_CONFIG = null;

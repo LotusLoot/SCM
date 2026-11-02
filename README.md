@@ -99,7 +99,10 @@ GitHub 저장소에서 파일을 다시 업로드(같은 이름이면 덮어써�
 | `core.js` | 저장, 능력치, 의뢰 생성, 영입 확률 |
 | `battle.js` | 전투 (자동 전투 + 궁극기) |
 | `dive.js` | 넷 다이브 미니게임 |
-| `screens.js` | 탭 6개 화면 |
+| `progress.js` | 레벨·순찰·메인 작전·시너지·패시브·미션·출석·픽업 데이터 |
+| `sfx.js` | 효과음 (파일 없이 합성) |
+| `screens.js` | 의뢰·도시·특수 작전 화면 |
+| `ui.js` | 본부(로비)·출격·용병·영입 화면, 보상 창 |
 | `net.js` | Firebase 온라인 기능 |
 | `firebase-config.js` | 내 Firebase 설정 (2단계) |
 | `firestore.rules` | 데이터베이스 보안 규칙 (4단계) |
