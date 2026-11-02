@@ -1,5 +1,6 @@
 'use strict';
 var ONLINE = false; // firebase-config.js가 채워져 있으면 net.js가 true로 바꿔요
+var SQUAD_N = 3; // 출전 인원
 /* ===== 기본 데이터 (기획서 그대로) ===== */
 const ROLES = {
   guardian: { n: '가디언', d: '공격을 막는 탱커', row: 'front', hp: 1900, atk: 70, def: 80, spd: 85, crit: 5 },
@@ -31,10 +32,16 @@ const MERCS = {
   halo: { n: '헤일로', role: 'medic', el: 'plasma', look: '치유 드론을 거느린 천사형 안드로이드', ult: '수호 드론', ud: '팀 전체에 보호막', sz: .98 },
   volt: { n: '볼트', role: 'engineer', el: 'plasma', look: '렌치를 든 정비공', ult: '포탑 배치', ud: '대형 포탑 소환', sz: 1 },
   swarm: { n: '스웜', role: 'engineer', el: 'mech', look: '드론 군단을 조종하는 파일럿', ult: '드론 폭격', ud: '적 전체에 미사일 비', sz: 1 },
-  chrono: { n: '크로노', role: 'assault', el: 'quantum', look: '은발에 금빛 눈을 가진 젊은 남자 검사, 시간을 멈추는 퀀텀 칼날', ult: '시간 정지', ud: '적 전체를 멈추고 아군이 한 턴 더', sz: 1.02, legend: true },
+  chrono: { n: '크로노', role: 'assault', el: 'quantum', look: '은발에 금빛 눈을 가진 젊은 남자 검사, 시간을 멈추는 퀀텀 칼날', ult: '시간 정지', ud: '3초 동안 적 전체를 멈춰요', sz: 1.02, legend: true },
   eclipse: { n: '이클립스', role: 'sniper', el: 'void', look: '검은 단발에 보라 네온 브릿지를 넣은 여자 저격수, 보라 빛 눈과 우아한 롱코트', ult: '일식', ud: '적을 한가운데로 빨아들여 폭발', sz: 1.02, legend: true },
 };
 const MERC_IDS = Object.keys(MERCS);
+/* 보스 전용 (영입 불가). art: 진짜 그림이 오기 전 임시로 빌려 쓰는 용병 그림 */
+const BOSSES = {
+  codeh: { n: 'CODE-H', role: 'guardian', el: 'mech', look: '건틀렛 두 개를 낀 거구의 여성 사이보그. 러스트 바이트가 고용한 집행자.', ult: '기가 임팩트', ud: '빨간 원을 그리며 충전한 뒤 건틀렛으로 땅을 내리쳐 원 안의 모두에게 큰 피해. 충전 중에 기절·정지시키면 끊겨요.', sz: 1.15, boss: true, art: 'pug', enrage: true },
+};
+const BOSS_IDS = Object.keys(BOSSES);
+const unitDef = id => MERCS[id] || BOSSES[id];
 const COMMON_IDS = MERC_IDS.filter(id => !MERCS[id].legend);
 const LEGEND_IDS = MERC_IDS.filter(id => MERCS[id].legend);
 const GRADES = [null,
@@ -93,7 +100,7 @@ const JOB_T = {
   escort: { b: 'lu', n: '호위', titles: ['VIP 호위: 크롬 리무진', '갤러리 경매장 경비', '기업 이사 퇴근길 호위', '클럽 「바이올렛 룸」 방어'], d: '습격해 오는 갱단을 막아 내세요. 방어전이에요.' },
   ship: { b: 'lu', n: '운송', titles: ['의료 캡슐 운송', '암호화 화물 배달', '희귀 칵테일 원액 운반', '기밀 서류 전달'], d: '용병 1명을 보내요. 시간이 지나면 보상을 받아요.' },
   hack: { b: 'dok', n: '해킹', titles: ['보험사 서버 털기', '광고탑 신호 가로채기', '은행 백업 금고 열기', '경찰 드론 로그 지우기'], d: '넷 다이브로 데이터 조각을 모으세요. 조각 5개 이상이면 성공.' },
-  sneak: { b: 'dok', n: '잠입', titles: ['연구소 샘플 빼 오기', '갱단 회계 장부 훔치기', '물류 창고 잠입'], d: '45초 안에 경비를 모두 쓰러뜨려야 해요.' },
+  sneak: { b: 'dok', n: '잠입', titles: ['연구소 샘플 빼 오기', '갱단 회계 장부 훔치기', '물류 창고 잠입'], d: '40초 안에 경비를 모두 쓰러뜨려야 해요.' },
   raid: { b: 'hound', n: '습격', titles: ['밀수 창고 습격', '불법 임플란트 공장 급습', '도망친 해결사 제압'], d: '먼저 쳐들어가는 공격전이에요.' },
   clue: { b: 'hound', n: '현상금 단서', titles: ['수배범 연락책 추적', '은신처 정보원 심문', '도주 차량 추적'], d: '이기면 이번 주 현상수배범의 단서를 얻어요.' },
 };

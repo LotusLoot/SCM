@@ -13,7 +13,6 @@
 const NETACT = {}; // 온라인일 때만 ACT에 덮어써요
 const NET = { on: false, db: null, auth: null, uid: null, name: '', crewId: null, crew: null, dist: [], unsubs: {}, saveTimer: null };
 const FB_VER = '10.12.2';
-const KST_OFF = 9 * 3600e3;
 
 function fbConfigured() { const c = window.FIREBASE_CONFIG; return !!(c && c.apiKey && c.projectId && !/여기/.test(c.apiKey)); }
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('불러오기 실패: ' + src)); document.head.appendChild(s); }); }
@@ -95,7 +94,7 @@ async function netBoot() {
   netDaily();
   const first = { name: NET.name, crewId: NET.crewId };
   migrate(S);
-  if (!d || !d.defense) first.defense = defenseTeam();
+  if (!d || !d.defense || sq3Notice()) first.defense = defenseTeam();
   await userSet(first);
   cloudSave();
   subDistricts(); subNews(); subCrew();
@@ -114,11 +113,10 @@ function cloudSave() {
     buildingBest: S.building.best, rep: repLv(), title: S.title || '', updatedAt: sts(),
   }, { merge: true }).catch(netErr);
 }
-function defenseTeam() { return S.squad.map((id, slot) => id ? { id, slot, g: S.roster[id].g, imp: S.roster[id].imp, mlv: S.roster[id].lv || 1 } : null).filter(Boolean); }
+function defenseTeam() { return S.squad.slice(0, SQUAD_N).map((id, slot) => id ? { id, slot, g: S.roster[id].g, imp: S.roster[id].imp, mlv: S.roster[id].lv || 1 } : null).filter(Boolean); }
 ACT.setDefense = () => { userSet({ defense: defenseTeam(), power: squadPower() }); toast('현재 분대를 방어 팀으로 등록했어요', 'good'); };
 
 /* ---------- 하루 / 주간 (한국 시간) ---------- */
-const dayKey = () => new Date(Date.now() + KST_OFF).toISOString().slice(0, 10);
 const weekKey = () => Math.floor((Date.now() + KST_OFF - Date.UTC(2026, 0, 5)) / (7 * 864e5)); // 월요일 0시 기준
 const BOUNTY_POOL = ['chrono', 'eclipse', 'reaper', 'hawkeye', 'pug', 'glitch', 'specter', 'blade'];
 function netDaily() {
@@ -356,7 +354,7 @@ async function fetchDefense(crewId) {
   const c = qs.docs.map(x => x.data()).filter(x => x.defense && x.defense.length);
   if (!c.length) return null;
   const p = pick(c);
-  return { name: p.name, team: p.defense.slice(0, 5).map(m => ({ id: m.id, slot: m.slot, g: m.g, imp: m.imp, mlv: m.mlv || 1, real: true, frame: frameOf(m.g) })) };
+  return { name: p.name, team: p.defense.slice(0, SQUAD_N).map((m, i) => ({ id: m.id, slot: i, g: m.g, imp: m.imp, mlv: m.mlv || 1, real: true, frame: frameOf(m.g) })) };
 }
 NETACT.fightDistrict = async v => {
   const i = +v, d = DISTRICTS[i], raw = NET.dist[i], ours = raw.owner === NET.crewId;
@@ -409,7 +407,7 @@ const netOpenArena = async function () {
     try {
       const qs = await NET.db.collection('users').where('arenaScore', '>=', Math.max(0, a.score - 200)).orderBy('arenaScore').limit(25).get();
       real = shuffle(qs.docs.filter(d => d.id !== NET.uid && (d.data().defense || []).length)).slice(0, 3).map(d => {
-        const u = d.data(), team = u.defense.slice(0, 5).map(m => ({ id: m.id, slot: m.slot, g: m.g, imp: m.imp, mlv: m.mlv || 1, real: true, frame: frameOf(m.g) }));
+        const u = d.data(), team = u.defense.slice(0, SQUAD_N).map((m, i) => ({ id: m.id, slot: i, g: m.g, imp: m.imp, mlv: m.mlv || 1, real: true, frame: frameOf(m.g) }));
         const pw = Math.round(team.reduce((s, t) => s + unitPower(mercStats(t.id, t.g, t.imp, 1, t.mlv)), 0));
         return { n: u.name, real: true, pw, lv: Math.max(1, 1 + (pw / teamPowerAt(1) - 1) / .13), team };
       });
@@ -452,7 +450,7 @@ NETACT.bountyFight = () => {
   startBattle({
     pay: () => { bt.tracks--; },
     title: `현상금 사냥 · ${MERCS[bt.boss].n}`, enemyName: `현상수배범 ${MERCS[bt.boss].n}`, allies: squadAllies(),
-    enemies: [{ id: bt.boss, slot: 0, boss: true, lv: bt.lv, frame: 2, hp: start }], time: 75,
+    enemies: [{ id: bt.boss, slot: 0, boss: true, lv: bt.lv, frame: 2, hp: start, hpMul: 2.5 }], time: 40,
     onEnd: async res => {
       if (res.kind === 'retreat' && res.enemyHp >= start) return;
       const dealt = res.win ? start : Math.max(0, start - res.enemyHp);

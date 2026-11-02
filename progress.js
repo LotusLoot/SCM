@@ -12,20 +12,20 @@ const lvCost = L => ({ exp: Math.round(40 + 6 * Math.pow(L, 1.8)), cr: L * 30 })
 
 /* ---------- 패시브 ---------- */
 const PASSIVES = {
-  ironwall: ['강철 대열', '아군 앞줄 방어 +15%'],
+  ironwall: ['강철 대열', '아군 근접 용병(가디언·돌격) 방어 +15%'],
   pug: ['광폭화', '체력 50% 이하일 때 공격 +35%'],
   blade: ['잔상', '치명타가 터지면 30% 추가 베기'],
   reaper: ['처형', '체력 30% 이하인 적에게 피해 +50%'],
-  hawkeye: ['첫 발', '전투 첫 공격 피해 2.5배'],
-  specter: ['사냥꾼의 눈', '기절·정지·표식 상태의 적에게 피해 +30%'],
-  glitch: ['노이즈', '일반 공격 15% 확률로 0.8초 기절'],
-  neuro: ['신경 교란', '일반 공격이 적 궁극기 게이지를 8 깎음'],
-  nano: ['나노 재생', '아군 전체가 매초 최대 체력 0.6% 회복'],
+  hawkeye: ['첫 발', '전투 첫 공격 피해 2배'],
+  specter: ['사냥꾼의 눈', '기절·표식·약화·둔화 상태의 적에게 피해 +30%'],
+  glitch: ['노이즈', '기본 공격이 12% 확률로 적을 잠깐 기절시켜요'],
+  neuro: ['신경 교란', '기본 공격에 맞은 적이 1초 동안 느려져요'],
+  nano: ['나노 재생', '5초마다 아군 전체 체력 3% 회복'],
   halo: ['빛의 장막', '전투 시작 때 아군 전체에 체력 10% 보호막'],
   volt: ['전류 튐', '일반 공격이 다른 적 1명에게 35% 튐'],
   swarm: ['자율 드론', '일반 공격 뒤 드론이 25% 추가 사격'],
-  chrono: ['가속 회로', '궁극기 게이지 획득 +30%'],
-  eclipse: ['사건의 지평선', '적을 처치하면 궁극기 게이지 +40'],
+  chrono: ['가속 회로', '에너지 획득 +30%'],
+  eclipse: ['사건의 지평선', '적을 처치하면 에너지 +40'],
 };
 
 /* ---------- 진형 시너지 ---------- */
@@ -51,7 +51,7 @@ function synergyOf(ids) {
 /* ---------- 메인 작전 (10챕터 × 8스테이지) ---------- */
 const CHAPTERS = [
   { n: '네온 거리의 신참', s: '사무실 앞 골목부터 정리하자. 핑크 팩츠가 우리 간판에 낙서를 했다.' },
-  { n: '녹슨 부두', s: '컨테이너 사이로 밀수 화물이 오간다. 러스트 바이트가 길목을 막았다.' },
+  { n: '녹슨 부두', s: '컨테이너 사이로 밀수 화물이 오간다. 러스트 바이트가 길목을 막았고, 그 뒤에는 강철 건틀렛의 거인 CODE-H가 버티고 있다.', boss: 'codeh' },
   { n: '독안개 하수도', s: '도시 밑바닥의 밑바닥. 그린 미스트의 독가스를 뚫어야 한다.' },
   { n: '강철 공장', s: '쉬지 않는 공장. 아이언 후크의 갈고리 팔이 노동자를 붙잡고 있다.' },
   { n: '거미줄 암시장', s: '모든 것이 팔리는 골목. 스파이더 넷이 우리 정보를 팔아넘겼다.', boss: 'reaper' },
@@ -66,9 +66,31 @@ const stageLv = idx => { const c = Math.floor(idx / STAGES_PER), s = idx % STAGE
 const stageName = idx => `${Math.floor(idx / STAGES_PER) + 1}-${idx % STAGES_PER + 1}`;
 function stageEnemies(idx) {
   const c = Math.floor(idx / STAGES_PER), s = idx % STAGES_PER, lv = stageLv(idx), boss = CHAPTERS[c].boss;
-  if (s === 7 && boss) return [{ id: boss, slot: 0, boss: true, lv: lv - 2, frame: 2 }];
+  if (s === 7 && boss) return [{ id: boss, slot: 0, boss: true, lv: BOSSES[boss] ? lv : lv - 2, frame: BOSSES[boss] ? 0 : 2 }];
   const t = makeGangTeam(lv); if (s === 7) t.forEach(u => { u.frame = Math.max(u.frame, 1); });
   return t;
+}
+/* 스테이지마다 다른 목표 */
+const STAGE_MODES = ['elim', 'waves', 'hunt', 'elim', 'escort', 'waves', 'survive', 'boss'];
+const MODE_INFO = {
+  elim: { n: '섬멸', c: '#FF3D9A', d: '적을 모두 쓰러뜨려요. 빨간 경고 범위가 차오르면 회피로 빠져나오세요.', s3: '40초 안에' },
+  waves: { n: '연속전', c: '#FFB627', d: '적이 3번에 나눠 몰려와요. 체력과 에너지는 다음 무리까지 이어져요.', s3: '75초 안에' },
+  hunt: { n: '표적', c: '#FFD54A', d: '표적(노란 체력)이 22초 뒤 오른쪽으로 도망쳐요. 표적만 잡으면 이겨요. 직접 달려가 스킬을 집중하세요.', s3: '12초 안에 처치' },
+  escort: { n: '호위', c: '#2DE2E6', d: '왼쪽의 화물 드론을 지켜요. 적 일부가 드론을 노려요. 드론 근처에서 싸우세요.', s3: '드론 체력 60% 이상' },
+  survive: { n: '생존', c: '#7DFF6A', d: '45초 동안 버텨요. 쓰러뜨린 적은 잠시 뒤 다시 나와요.', s3: '적 8명 처치' },
+  boss: { n: '보스', c: '#FF4B5C', d: '보스의 큰 공격은 빨간 원으로 미리 보여요. 원 밖으로 피하거나, 기절·정지시켜 끊으세요.', s3: '60초 안에' },
+};
+const stageMode = idx => STAGE_MODES[idx % STAGES_PER];
+function stageDef(idx) {
+  const mode = stageMode(idx), lv = stageLv(idx), info = MODE_INFO[mode];
+  const d = { mode, time: 90 };
+  if (mode === 'waves') { d.waves = [makeGangTeam(lv - .3, { count: 2 }), makeGangTeam(lv, { count: 3 }), makeGangTeam(lv + .4, { count: 3 })]; d.time = 150; d.star3 = { label: info.s3, test: B => B.t <= 75 }; }
+  else if (mode === 'hunt') { const t = makeGangTeam(lv - .4); t[2].isTarget = true; t[2].hpMul = 1.5; d.enemies = t; d.escape = 22; d.star3 = { label: info.s3, test: B => B.t <= 12 }; }
+  else if (mode === 'escort') { d.enemies = makeGangTeam(lv + .2); d.cargo = true; d.star3 = { label: info.s3, test: B => B.cargo && B.cargo.hp / B.cargo.maxHp >= .6 }; }
+  else if (mode === 'survive') { d.enemies = makeGangTeam(lv - .2, { count: 3 }); d.time = 45; d.star3 = { label: info.s3, test: B => B.kills >= 8 }; }
+  else if (mode === 'boss') { d.enemies = stageEnemies(idx); d.time = 120; d.star3 = { label: info.s3, test: B => B.t <= 60 }; }
+  else { d.enemies = makeGangTeam(lv); d.star3 = { label: info.s3, test: B => B.t <= 40 }; }
+  return d;
 }
 function stageReward(idx) {
   const s = idx % STAGES_PER, lv = stageLv(idx);
@@ -120,6 +142,10 @@ function onNewDay() {
   S.daily = { prog: {}, done: [], chest: [] };
   S.idle.fast = 0;
 }
+function sq3Notice() { // 5인 → 3인 분대로 바뀐 뒤 한 번만 알려요
+  if (!S || !S.seen || S.seen.sq3 !== 1) return false; S.seen.sq3 = 2; save();
+  setTimeout(() => toast('이제 출전은 3명이에요. 가장 강한 3명을 남겼어요. 본부에서 자리를 눌러 바꿀 수 있어요', 'gold'), 600); return true;
+}
 function migrate(st) {
   for (const id in st.roster) { const o = st.roster[id]; if (!o.lv) o.lv = 1; if (!o.imp) o.imp = { eye: 0, arm: 0, nerve: 0, skin: 0 }; }
   if (st.exp === undefined) st.exp = 1500;
@@ -129,5 +155,13 @@ function migrate(st) {
   if (!st.att) st.att = { n: 0, lastDay: null };
   if (st.mileage === undefined) st.mileage = 0;
   if (!st.settings) st.settings = { sfx: true };
+  if (st.squad && st.squad.length > SQUAD_N) { // 분대 5명 → 3명: 가장 강한 3명을 남겨요
+    const pw = id => { const o = st.roster[id]; return o ? unitPower(mercStats(id, o.g, o.imp, 1, o.lv || 1)) : 0; };
+    const keep = st.squad.filter(Boolean).sort((a, b) => pw(b) - pw(a)).slice(0, SQUAD_N);
+    st.squad = Array.from({ length: SQUAD_N }, (_, i) => keep[i] || null);
+    const run = st.building && st.building.run;
+    if (run && run.squad && run.squad.length > SQUAD_N) { const hp = {}; const ids = run.squad.filter(Boolean).slice(0, SQUAD_N); ids.forEach((id, i) => { const old = run.squad.indexOf(id); hp[i] = run.hp[old] ?? 1; }); run.squad = ids; run.hp = hp; }
+    if (!st.seen) st.seen = {}; st.seen.sq3 = 1;
+  }
   return st;
 }

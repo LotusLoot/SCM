@@ -5,7 +5,7 @@ let S = null;
 function freshState() {
   const st = {
     v: 1, day: 1, credits: 12000, chips: 300, mats: { alloy: 6, biogel: 6, neural: 6 }, repXp: 0,
-    roster: {}, squad: ['ironwall', 'blade', 'hawkeye', 'glitch', 'nano'],
+    roster: {}, squad: ['blade', 'ironwall', 'nano'],
     pity: { n: 0, p: 0 }, crew: null,
     dist: DISTRICTS.map(() => ({ owner: 'npc', ctrl: { npc: 100, me: 0, r0: 0, r1: 0, r2: 0 } })),
     tickets: 3, defenses: 3, spClaimed: false,
@@ -16,7 +16,7 @@ function freshState() {
     news: [{ d: 1, t: '용병단 사무실 개업. 오늘부터 도시 밑바닥에서 시작해요.' }],
     crewXp: 0, seen: {},
   };
-  for (const id of st.squad) st.roster[id] = newMerc();
+  for (const id of ['ironwall', 'blade', 'hawkeye', 'glitch', 'nano']) st.roster[id] = newMerc(); // 시작 용병 5명 중 3명이 출전
   st.jobs = genJobs(st);
   migrate(st); st.exp = 1500;
   return st;
@@ -63,7 +63,7 @@ function grant(r, quiet) {
 
 /* ===== 능력치 ===== */
 function mercStats(id, g, imp, lvMul = 1, mlv = 1) {
-  const m = MERCS[id], r = ROLES[m.role], gm = GRADES[g].m * (m.legend ? 1.2 : 1) * lvMul * lvStat(mlv);
+  const m = unitDef(id), r = ROLES[m.role], gm = GRADES[g].m * (m.legend ? 1.2 : 1) * lvMul * lvStat(mlv);
   imp = imp || { eye: 0, arm: 0, nerve: 0, skin: 0 };
   return {
     hp: Math.round(r.hp * gm), atk: Math.round(r.atk * gm * (1 + imp.arm * .05)),
@@ -75,8 +75,8 @@ const ownStats = id => { const o = S.roster[id]; return mercStats(id, o.g, o.imp
 const unitPower = s => s.hp * .1 + s.atk * 1.6 + s.def * 1.2 + s.spd * .6 + s.crit * 4;
 const squadPower = (sq = S.squad) => Math.round(sq.filter(Boolean).reduce((a, id) => a + unitPower(ownStats(id)), 0));
 const lvMul = lv => Math.pow(1.09, Math.max(1, lv) - 1);
-function teamPowerAt(lv) { // 같은 레벨 갱단 5명의 대략 전투력
-  return Math.round(['guardian', 'assault', 'sniper', 'hacker', 'medic'].reduce((a, r) => a + unitPower(mercStats(COMMON_IDS.find(i => MERCS[i].role === r), 1, null, lvMul(lv))), 0));
+function teamPowerAt(lv) { // 같은 레벨 갱단 3명의 대략 전투력
+  return Math.round(['guardian', 'assault', 'medic'].reduce((a, r) => a + unitPower(mercStats(COMMON_IDS.find(i => MERCS[i].role === r), 1, null, lvMul(lv))), 0));
 }
 
 /* ===== 적 팀 ===== */
@@ -86,15 +86,15 @@ function makeGangTeam(lv, opt = {}) {
   const pool = opt.pool || null;
   const f = shuffle(pool ? pool.filter(i => ROLES[MERCS[i].role].row === 'front') : fronts.slice());
   const b = shuffle(pool ? pool.filter(i => ROLES[MERCS[i].role].row === 'back') : backs.slice());
-  const ids = [f[0] || pick(fronts), f[1] || pick(fronts), b[0] || pick(backs), b[1] || pick(backs), b[2] || pick(backs)];
+  const ids = [f[0] || pick(fronts), b[0] || pick(backs), Math.random() < .5 ? (f[1] || pick(fronts)) : (b[1] || pick(backs)), b[2] || pick(backs), f[2] || pick(fronts)];
   const fr = lv >= 20 ? 2 : lv >= 11 ? 1 : 0;
-  return ids.slice(0, opt.count || 5).map((id, i) => ({ id, slot: i, g: fr === 2 ? 7 : fr === 1 ? 6 : 1, lv, frame: fr }));
+  return ids.slice(0, opt.count || SQUAD_N).map((id, i) => ({ id, slot: i, g: fr === 2 ? 7 : fr === 1 ? 6 : 1, lv, frame: fr }));
 }
 function makeArenaTeam(lv) {
   const pool = lv > 9 ? MERC_IDS : COMMON_IDS;
   const fronts = shuffle(pool.filter(i => ROLES[MERCS[i].role].row === 'front'));
   const backs = shuffle(pool.filter(i => ROLES[MERCS[i].role].row === 'back'));
-  return [fronts[0], fronts[1], backs[0], backs[1], backs[2]].map((id, i) => {
+  return [fronts[0], backs[0], Math.random() < .5 ? fronts[1] : backs[1]].map((id, i) => {
     const fr = lv >= 18 ? (Math.random() < .5 ? 2 : 1) : lv >= 9 ? (Math.random() < .5 ? 1 : 0) : 0;
     return { id, slot: i, g: 1, lv: MERCS[id].legend ? lv - 1.5 : lv, frame: fr };
   });
@@ -207,7 +207,38 @@ function applyCtrl(i, who, amt) {
   if (d.ctrl[who] >= 100 && prev !== who) { d.owner = who; return true; }
   return false;
 }
-function endDay() {
+/* ---------- 하루: 실제 날짜(한국 시간 0시)로 넘어가요 ---------- */
+const KST_OFF = 9 * 3600e3;
+const dayKey = () => new Date(Date.now() + KST_OFF).toISOString().slice(0, 10);
+const msToNextDay = () => 864e5 - ((Date.now() + KST_OFF) % 864e5);
+function offlineDaily() { // 오프라인: 날짜가 바뀌었으면 지난 날짜만큼 하루를 넘겨요 (최대 7일)
+  if (typeof ONLINE !== 'undefined' && ONLINE) return false;
+  const dk = dayKey();
+  if (!S.offDay) { S.offDay = dk; save(); return false; }
+  if (S.offDay === dk) return false;
+  const n = Math.max(1, Math.round((Date.parse(dk) - Date.parse(S.offDay)) / 864e5));
+  S.offDay = dk;
+  for (let i = 0; i < Math.min(7, n); i++) endDay(true);
+  save(); toast(`새 날이 밝았어요 (DAY ${S.day}). 의뢰판·공격권·미션이 채워졌어요`, ''); return true;
+}
+/* 미션 초기화: 일일 미션·상자·의뢰를 모두 끝내면 새 미션과 의뢰판을 바로 받아요 */
+const RESET_MAX = 2; // 하루에 미션 초기화는 2번까지
+const resetsToday = () => (S.resetDay && S.resetDay.d === dayId()) ? S.resetDay.n : 0;
+function resetCheck() {
+  const left = RESET_MAX - resetsToday();
+  const mis = MISSIONS.filter(m => S.daily.done.includes(m.k)).length, chest = MISSION_CHEST.filter((c, i) => S.daily.chest.includes(i)).length;
+  const jobs = S.jobs.filter(j => j.st === 'done').length;
+  return { mis, misT: MISSIONS.length, chest, chestT: MISSION_CHEST.length, jobs, jobsT: S.jobs.length, left, ok: left > 0 && mis === MISSIONS.length && chest === MISSION_CHEST.length && jobs === S.jobs.length && S.jobs.length > 0 };
+}
+function resetMissions() {
+  const rc = resetCheck();
+  if (rc.left <= 0) { toast(`오늘은 초기화를 ${RESET_MAX}번 다 썼어요. 0시에 다시 채워져요`, 'bad'); sfx('bad'); return; }
+  if (!rc.ok) { toast('미션과 상자, 의뢰를 모두 끝내야 초기화할 수 있어요', 'bad'); sfx('bad'); return; }
+  S.daily = { prog: {}, done: [], chest: [] }; S.jobs = genJobs(S); S.resets = (S.resets || 0) + 1;
+  S.resetDay = { d: dayId(), n: resetsToday() + 1 };
+  save(); sfx('reward'); toast('미션과 의뢰판을 새로 받았어요!', 'gold'); refresh();
+}
+function endDay(silent) {
   // 경쟁 크루 행동
   const myPow = squadPower();
   for (const r of RIVALS) {
@@ -229,6 +260,7 @@ function endDay() {
   const keep = S.jobs.filter(j => j.st === 'ship');
   S.jobs = keep.concat(genJobs(S)).slice(0, Math.max(6, keep.length + 4));
   if ((S.day - 1) % 7 === 0) weeklyReset();
+  if (silent) return;
   toast(`DAY ${S.day} 시작. 의뢰판이 새로 올라왔어요.`, '');
   refresh();
 }

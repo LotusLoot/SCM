@@ -8,12 +8,12 @@ const gangPick = () => DISTRICTS[rint(0, Math.min(11, repLv() + 1))].g;
 const owns = id => !!S.roster[id];
 
 /* ================= 본부 ================= */
-ACT.endDay = () => endDay();
+ACT.resetMissions = () => resetMissions();
 ACT.pickSlot = v => {
   const slot = +v, cur = S.squad[slot];
   const ids = MERC_IDS.filter(owns);
   openModal({
-    label: 'SQUAD', title: `${slot < 2 ? '앞줄' : '뒷줄'} ${slot < 2 ? slot + 1 : slot - 1}번 자리`, wide: true, c: 'var(--cyan)',
+    label: 'SQUAD', title: `${slot + 1}번 자리`, wide: true, c: 'var(--cyan)',
     html: `<p class="sub">앞줄은 가디언·어설트, 뒷줄은 스나이퍼·해커·메딕·엔지니어가 잘 맞아요. 다른 자리에 있는 용병을 고르면 자리를 바꿔요.</p>
       <div class="cards" style="margin-top:10px">${ids.map(id => mercCard(id, { act: 'setSlot', sel: id === cur, flag: S.squad.includes(id) && id !== cur ? '배치 중' : '' })).join('')}</div>
       ${cur ? '<div style="margin-top:12px"><button class="btn gray sm" data-a="setSlot" data-v="">자리 비우기</button></div>' : ''}`,
@@ -74,6 +74,7 @@ SCREENS.job = () => {
     <div class="brokers">${brokers}</div><div class="jobs">${jobs}</div></div>`;
 };
 function jobReward(j, mul = 1) {
+  track('job'); // 일일 미션 「의뢰 2개 완료하기」
   const r = { ...j.r, credits: Math.round(j.r.credits * mul * (S.dist[7].owner === 'me' ? 1.2 : 1)), crew: 5 };
   if (j.r.clue) { S.bounty.clues = Math.min(3, S.bounty.clues + 1); toast(`현상금 단서 ${S.bounty.clues}/3`, 'gold'); }
   grant(r);
@@ -98,10 +99,10 @@ ACT.startJob = id => {
   }
   const gang = gangPick();
   startBattle({
-    title: `${JOB_T[j.k].n} · ${j.title}`, enemyName: gang, allies: squadAllies(), enemies: makeGangTeam(j.lv), time: j.k === 'sneak' ? 45 : 75,
+    title: `${JOB_T[j.k].n} · ${j.title}`, enemyName: gang, allies: squadAllies(), enemies: makeGangTeam(j.lv), time: j.k === 'sneak' ? 40 : 90,
     onEnd: res => {
       if (res.win) { j.st = 'done'; jobReward(j); addCrewXp(5); }
-      else if (res.kind !== 'retreat') toast(res.kind === 'timeout' ? '의뢰 실패. 시간이 모자랐어요. 딜러를 늘리거나 궁극기를 빨리 쓰세요' : '의뢰 실패. 배치를 바꾸고 다시 도전하세요', 'bad');
+      else if (res.kind !== 'retreat') toast(res.kind === 'timeout' ? '의뢰 실패. 시간이 모자랐어요. 스킬과 궁극기를 아끼지 마세요' : '의뢰 실패. 배치를 바꾸고 다시 도전하세요', 'bad');
     }
   });
 };
@@ -288,7 +289,7 @@ ACT.bountyFight = () => {
   startBattle({
     pay: () => { bt.tracks--; },
     title: `현상금 사냥 · ${MERCS[bt.boss].n}`, enemyName: `현상수배범 ${MERCS[bt.boss].n}`, allies: squadAllies(),
-    enemies: [{ id: bt.boss, slot: 0, boss: true, lv, frame: 2, hp: bt.hp }], time: 75,
+    enemies: [{ id: bt.boss, slot: 0, boss: true, lv, frame: 2, hp: bt.hp, hpMul: 2.5 }], time: 40,
     onEnd: res => {
       bt.hp = res.win ? 0 : Math.max(.01, res.enemyHp);
       if (res.win) {

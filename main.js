@@ -31,8 +31,8 @@ function intro() {
     label: 'WELCOME · 2189', title: 'SCM 용병단 개업', c: 'var(--cyan)',
     html: `<p style="margin:0">거대 기업이 지배하는 네온 도시. 당신은 작은 용병단의 단장이에요. 용병을 모아 조합과 배치로 싸우고, 도시 밑바닥에서 최강 용병단으로 올라가요.</p>
       <div class="box" style="display:flex;flex-direction:column;gap:6px;font-size:13px">
-        <div><b style="color:var(--pink)">전투</b> 자동으로 진행돼요. 궁극기만 직접 타이밍을 골라 눌러요 (PC는 숫자키 1~5).</div>
-        <div><b style="color:var(--cyan)">조합</b> 해커가 적을 기절시킨 순간 스나이퍼 궁극기를 쓰면 큰 데미지.</div>
+        <div><b style="color:var(--pink)">전투</b> 용병 1명을 직접 움직여 공격·회피·스킬·궁극기를 써요. 나머지 동료는 알아서 싸우고, 아래 초상화를 누르면 조작할 용병이 바뀌어요 (PC: WASD 이동, J 공격, K 회피, L 스킬, I 궁극기, 1~3 교체).</div>
+        <div><b style="color:var(--cyan)">회피</b> 적이 크게 때리기 전에 바닥에 빨간 경고 범위가 차올라요. 터지기 직전에 회피하면 PERFECT! 시간이 느려지고 에너지가 차요.</div>
         <div><b style="color:var(--amber)">성장</b> 메인 작전과 의뢰로 보상을 벌고, 용병 레벨을 올리고, 영입으로 모아 승급해요. 자리를 비워도 순찰 보상이 쌓여요.</div>
         <div><b style="color:var(--lime)">속성</b> 플라즈마 → 기계 → 바이오 → 플라즈마 (유리하면 1.5배).</div></div>
       <button class="btn block" data-a="closeModal">메인 작전 시작하기</button>`,
@@ -49,9 +49,9 @@ async function boot() {
   for (const k in f) if (S[k] === undefined) S[k] = f[k];
   drawBgCity(); addEventListener('resize', () => { clearTimeout(boot._t); boot._t = setTimeout(drawBgCity, 200); });
   refresh(false);
-  migrate(S);
+  migrate(S); sq3Notice(); offlineDaily();
   if (!S.seen.intro) intro(); else if (attendReady()) setTimeout(() => ACT.attend(), 400);
-  setInterval(() => { if (ONLINE && netDaily()) { softRefresh(); return; } if ((TAB === 'job' || TAB === 'hq') && !$('#modal') && !B && !D) refresh(); else { renderTabs(); } }, 20000);
+  setInterval(() => { if (ONLINE ? netDaily() : (!B && !D && offlineDaily())) { ONLINE ? softRefresh() : refresh(); return; } if ((TAB === 'job' || TAB === 'hq') && !$('#modal') && !B && !D) refresh(); else { renderTabs(); } }, 20000);
   preloadImages();
 }
 const start = () => boot();
