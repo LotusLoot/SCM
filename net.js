@@ -18,7 +18,7 @@ function fbConfigured() { const c = window.FIREBASE_CONFIG; return !!(c && c.api
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('불러오기 실패: ' + src)); document.head.appendChild(s); }); }
 async function netInit() {
   if (!fbConfigured()) return false;
-  if (!window.firebase) for (const m of ['app', 'auth', 'firestore']) await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}-compat.js`);
+  if (!window.firebase) for (const m of ['app', 'auth', 'firestore', ...(window.FIREBASE_CONFIG.databaseURL ? ['database'] : [])]) await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}-compat.js`);
   if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG);
   NET.auth = firebase.auth(); NET.db = firebase.firestore(); NET.on = true; ONLINE = true;
   netInstall();
@@ -100,7 +100,29 @@ async function netBoot() {
   subDistricts(); subNews(); subCrew();
   addEventListener('visibilitychange', () => { if (document.hidden) cloudSave(); });
 }
-ACT.logout = async () => { await cloudSave(); Object.values(NET.unsubs).forEach(f => f && f()); await NET.auth.signOut(); try { localStorage.removeItem(SAVE_KEY); } catch (e) { } location.reload(); };
+/* 게스트 → Google 계정 연결 (진행 상황은 그대로) */
+const isGuest = () => !!(NET.auth && NET.auth.currentUser && NET.auth.currentUser.isAnonymous);
+ACT.linkGoogle = async () => {
+  const u = NET.auth.currentUser; if (!u) return;
+  const p = new firebase.auth.GoogleAuthProvider();
+  try { await u.linkWithPopup(p); closeModal(true); await cloudSave(); toast('Google 계정에 연결했어요! 이제 다른 기기에서도 Google로 로그인하면 이어서 해요', 'good'); sfx('reward'); refresh(); }
+  catch (e) {
+    const c = e.code || '';
+    if (c.includes('credential-already-in-use') || c.includes('email-already-in-use')) toast('이 Google 계정은 이미 다른 단장이 쓰고 있어요. 다른 Google 계정을 고르세요', 'bad');
+    else if (/popup-blocked|operation-not-supported/.test(c)) { try { await cloudSave(); await u.linkWithRedirect(p); } catch (e2) { toast(loginMsg(e2), 'bad'); } }
+    else toast(loginMsg(e), 'bad');
+  }
+};
+ACT.logout = async () => {
+  if (isGuest() && !ACT._lo) { // 게스트는 로그아웃하면 다시 못 들어와요
+    openModal({ label: 'LOGOUT', title: '게스트 로그아웃', c: 'var(--red)',
+      html: `<p style="margin:0">게스트 계정은 로그아웃하면 <b style="color:var(--red)">다시 들어올 수 없어요</b>. 지금까지의 진행 상황이 사라져요.</p><p class="sub">먼저 Google 계정을 연결하면 안전하게 로그아웃할 수 있어요.</p>
+        <div class="row wrap"><button class="btn block" data-a="linkGoogle">Google 계정 연결하기</button><button class="btn red block" id="lo-yes">그래도 로그아웃</button></div>`,
+      onMount: b => { $('#lo-yes', b).onclick = () => { ACT._lo = 1; closeModal(true); ACT.logout(); }; } });
+    return;
+  }
+  ACT._lo = 0;
+  await cloudSave(); Object.values(NET.unsubs).forEach(f => f && f()); await NET.auth.signOut(); try { localStorage.removeItem(SAVE_KEY); } catch (e) { } location.reload(); };
 
 /* ---------- 저장 ---------- */
 const _localSave = save;
@@ -215,7 +237,7 @@ function subCrew() {
     if (!s.exists) { if (NET.crewId) leftCrew('크루가 해체됐어요'); else { S.pendingCrew = null; subCrew(); } return; }
     const c = { id, ...s.data() };
     if (NET.crewId) {
-      if (!c.members.includes(NET.uid)) { leftCrew('크루에서 나가게 됐어요'); return; }
+      if (!c.members.includes(NET.uid)) { leftCrew((c.banned || {})[NET.uid] ? `크루 「${c.name}」에서 추방됐어요` : '크루에서 나가게 됐어요'); return; }
     } else if (S.pendingCrew) {
       if (c.members.includes(NET.uid)) { NET.crewId = id; S.pendingCrew = null; userSet({ crewId: id }); toast(`크루 「${c.name}」 가입 승인!`, 'good'); }
       else if (!(c.pending || []).includes(NET.uid)) { S.pendingCrew = null; NET.crew = null; toast('가입 신청이 받아들여지지 않았어요', 'bad'); subCrew(); softRefresh(); return; }
@@ -226,8 +248,19 @@ function subCrew() {
   }, netErr);
 }
 function leftCrew(msg) { NET.crewId = null; NET.crew = null; S.crew = null; S.crewXp = 0; userSet({ crewId: null }); toast(msg, 'bad'); subCrew(); softRefresh(); }
-const netAddCrewXp = n => { if (!NET.crewId || n <= 0) return; crewRef(NET.crewId).update({ xp: FV().increment(Math.min(50, Math.round(n))) }).catch(netErr); };
+const netAddCrewXp = n => {
+  if (!NET.crewId || n <= 0) return; const m = Math.min(50, Math.round(n));
+  S.crewCoin = (S.crewCoin || 0) + m * 10; // 개인 크루 코인 (크루 상점)
+  crewRef(NET.crewId).update({ xp: FV().increment(m), ['contrib.' + NET.uid]: FV().increment(m) }).catch(netErr);
+};
 const isLeader = () => NET.crew && NET.crew.leader === NET.uid;
+/* 직급: 크루장 3 · 부크루장 2(1명) · 간부 1(3명) · 단원 0 */
+const RANKS = [['단원', 'var(--dim)'], ['간부', 'var(--cyan)'], ['부크루장', 'var(--violet)'], ['크루장', 'var(--gold)']];
+const crewRank = (c, u) => !c ? 0 : c.leader === u ? 3 : (c.vices || []).includes(u) ? 2 : (c.officers || []).includes(u) ? 1 : 0;
+const myRank = () => crewRank(NET.crew, NET.uid);
+const rankTag = r => `<span class="rtag" style="--rc:${RANKS[r][1]}">${RANKS[r][0]}</span>`;
+const BAN_MS = 864e5;
+const bannedLeft = c => { const t = (c && c.banned || {})[NET.uid]; return t ? Math.max(0, t + BAN_MS - Date.now()) : 0; };
 
 NETACT.makeCrew = async () => {
   const name = ($('#crew-name').value || '').trim();
@@ -248,12 +281,14 @@ ACT.findCrew = async () => {
     const rows = qs.docs.map(d => ({ id: d.id, ...d.data() }));
     setModalBody(rows.length ? `<div style="display:flex;flex-direction:column;gap:8px">${rows.map(c => `<div class="box spread" style="padding:10px">
       <div class="row">${hexEmblem(c.color, c.name[0], 34)}<div><b>${esc(c.name)}</b><div class="px dim" style="font-size:11px">LV.${Math.min(10, 1 + Math.floor((c.xp || 0) / 120))} · ${c.members.length}/10명</div></div></div>
-      ${c.members.length >= 10 ? '<span class="px dim">FULL</span>' : `<button class="btn cyan sm" data-a="applyCrew" data-v="${c.id}">가입 신청</button>`}</div>`).join('')}</div>`
+      ${c.members.length >= 10 ? '<span class="px dim">FULL</span>' : bannedLeft(c) ? `<span class="sub" style="color:var(--red)">${Math.ceil(bannedLeft(c) / 36e5)}시간 뒤 신청 가능</span>` : `<button class="btn cyan sm" data-a="applyCrew" data-v="${c.id}">가입 신청</button>`}</div>`).join('')}</div>`
       : '<p class="sub">아직 크루가 없어요. 첫 크루를 만들어 보세요.</p>');
   } catch (e) { netErr(e); }
 };
 ACT.applyCrew = async id => {
   try {
+    const cs = await crewRef(id).get(); const bl = cs.exists ? bannedLeft(cs.data()) : 0;
+    if (bl) { toast(`이 크루에서 추방돼서 ${Math.ceil(bl / 36e5)}시간 뒤에 신청할 수 있어요`, 'bad'); return; }
     await crewRef(id).update({ pending: FV().arrayUnion(NET.uid), ['pnames.' + NET.uid]: NET.name });
     S.pendingCrew = id; save(); closeModal(); toast('가입 신청을 보냈어요. 크루장이 승인하면 들어가요', 'good'); subCrew(); refresh();
   } catch (e) { netErr(e); }
@@ -265,32 +300,73 @@ ACT.cancelApply = async () => {
 };
 ACT.manageCrew = () => {
   const c = NET.crew; if (!c) return;
-  const L = isLeader();
-  const mem = c.members.map(uid => `<div class="spread" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${uid === c.leader ? '★ ' : ''}${esc(c.names[uid] || '단원')}${uid === NET.uid ? ' (나)' : ''}</span>
-    ${L && uid !== NET.uid ? `<button class="btn red sm" data-a="kick" data-v="${uid}">추방</button>` : ''}</div>`).join('');
+  const me = myRank(), contrib = c.contrib || {};
+  const order = c.members.slice().sort((a, b) => crewRank(c, b) - crewRank(c, a) || (contrib[b] || 0) - (contrib[a] || 0));
+  const top = Math.max(1, ...c.members.map(u => contrib[u] || 0));
+  const mem = order.map((uid, i) => {
+    const r = crewRank(c, uid), cv = contrib[uid] || 0;
+    const act = uid === NET.uid ? '' : me === 3 ? `<button class="btn gray sm" data-a="crewRole" data-v="${uid}">직급·추방</button>`
+      : me > r ? `<button class="btn red sm" data-a="kick" data-v="${uid}">추방</button>` : '';
+    return `<div class="cmem ${uid === NET.uid ? 'me' : ''}"><div class="cmn">${rankTag(r)}<b>${esc(c.names[uid] || '단원')}</b>${uid === NET.uid ? '<span class="sub">(나)</span>' : ''}</div>
+      <div class="cmc"><div class="gauge thin"><i style="width:${cv / top * 100}%;--gc:${c.color}"></i></div><span class="px">기여 ${fmt(cv)}</span></div>${act}</div>`;
+  }).join('');
   const pend = (c.pending || []).map(uid => `<div class="spread" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc((c.pnames || {})[uid] || '지원자')}</span>
-    ${L ? `<div class="row"><button class="btn lime sm" data-a="approve" data-v="${uid}">승인</button><button class="btn gray sm" data-a="reject" data-v="${uid}">거절</button></div>` : ''}</div>`).join('');
+    ${me >= 1 ? `<div class="row"><button class="btn lime sm" data-a="approve" data-v="${uid}">승인</button><button class="btn gray sm" data-a="reject" data-v="${uid}">거절</button></div>` : ''}</div>`).join('');
   openModal({
-    label: 'CREW', title: c.name, c: c.color,
-    html: `<div class="eyebrow">MEMBERS ${c.members.length}/10</div><div>${mem}</div>
-      <div class="eyebrow" style="color:var(--amber)">가입 신청 ${(c.pending || []).length}</div><div>${pend || '<p class="sub">없음</p>'}</div>
-      <button class="btn gray block" id="leave-btn" data-a="leaveCrew">${L && c.members.length === 1 ? '크루 해체' : '크루 탈퇴'}</button>`,
+    label: 'CREW', title: c.name, c: c.color, wide: true,
+    html: `<div class="crewhead"><div>${rankTag(me)} <b>${esc(NET.name)}</b><div class="sub">내 기여도 ${fmt(contrib[NET.uid] || 0)} · 크루 코인 ${fmt(S.crewCoin || 0)}</div></div>
+        <button class="btn amber sm" data-a="crewShop">크루 상점</button></div>
+      <div class="eyebrow">MEMBERS ${c.members.length}/10 · 기여도 순</div><div class="cmems">${mem}</div>
+      <div class="eyebrow" style="color:var(--amber)">가입 신청 ${(c.pending || []).length}</div><div>${pend || '<p class="sub">없음</p>'}${(c.pending || []).length && me < 1 ? '<p class="sub">간부 이상이 승인할 수 있어요.</p>' : ''}</div>
+      <details class="box fold"><summary><span class="eyebrow">직급 안내</span></summary><div class="sub" style="margin-top:6px;line-height:1.7">
+        ${rankTag(3)} 모든 권한 · 직급 임명 · 크루장 넘기기<br>${rankTag(2)} 1명 · 가입 승인·거절 · 간부와 단원 추방<br>${rankTag(1)} 3명까지 · 가입 승인·거절 · 단원 추방<br>${rankTag(0)} 전투·의뢰·구역전으로 기여도를 쌓아요<br>추방된 사람은 24시간 동안 다시 가입 신청을 못 해요.</div></details>
+      <button class="btn gray block" id="leave-btn" data-a="leaveCrew">${isLeader() && c.members.length === 1 ? '크루 해체' : '크루 탈퇴'}</button>`,
   });
 };
 ACT.approve = async uid => {
-  const c = NET.crew; if (!isLeader()) return;
+  const c = NET.crew; if (myRank() < 1) return;
   if (c.members.length >= 10) { toast('크루원은 최대 10명이에요', 'bad'); return; }
   try { await crewRef(c.id).update({ members: FV().arrayUnion(uid), pending: FV().arrayRemove(uid), ['names.' + uid]: (c.pnames || {})[uid] || '단원' }); toast('가입을 승인했어요', 'good'); setTimeout(ACT.manageCrew, 300); } catch (e) { netErr(e); }
 };
-ACT.reject = async uid => { try { await crewRef(NET.crew.id).update({ pending: FV().arrayRemove(uid) }); setTimeout(ACT.manageCrew, 300); } catch (e) { netErr(e); } };
-ACT.kick = async uid => { try { await crewRef(NET.crew.id).update({ members: FV().arrayRemove(uid) }); toast('추방했어요'); setTimeout(ACT.manageCrew, 300); } catch (e) { netErr(e); } };
+ACT.reject = async uid => { if (myRank() < 1) return; try { await crewRef(NET.crew.id).update({ pending: FV().arrayRemove(uid) }); setTimeout(ACT.manageCrew, 300); } catch (e) { netErr(e); } };
+ACT.kick = uid => {
+  const c = NET.crew; if (!c || myRank() <= crewRank(c, uid)) return;
+  openModal({ label: 'KICK', title: '크루원 추방', c: 'var(--red)',
+    html: `<p style="margin:0"><b>${esc(c.names[uid] || '단원')}</b>을(를) 크루에서 추방할까요?</p><p class="sub">추방된 사람은 24시간 동안 다시 가입 신청을 할 수 없어요. 쌓은 기여도 기록은 지워져요.</p>
+      <div class="row wrap"><button class="btn red" id="kick-yes" style="flex:1">추방하기</button><button class="btn gray" data-a="manageCrew">취소</button></div>`,
+    onMount: b => { $('#kick-yes', b).onclick = async () => {
+      try { await crewRef(c.id).update({ members: FV().arrayRemove(uid), vices: FV().arrayRemove(uid), officers: FV().arrayRemove(uid), ['banned.' + uid]: Date.now() }); toast('추방했어요'); setTimeout(ACT.manageCrew, 300); } catch (e) { netErr(e); }
+    }; } });
+};
+ACT.crewRole = uid => { // 크루장 전용: 직급 바꾸기 · 넘기기 · 추방
+  const c = NET.crew; if (!c || !isLeader()) return; const r = crewRank(c, uid), nm = esc(c.names[uid] || '단원');
+  const opt = (k, label, dis, why) => `<button class="btn ${k === 'leader' ? 'amber' : 'gray'} block ${dis ? 'off' : ''}" data-a="setRole" data-v="${uid}:${k}" ${dis ? 'disabled' : ''}>${label}${why ? `<small style="display:block;font-size:11px;opacity:.8">${why}</small>` : ''}</button>`;
+  const vOn = (c.vices || []).filter(x => x !== uid).length, oOn = (c.officers || []).filter(x => x !== uid).length;
+  openModal({ label: 'ROLE', title: `${nm} 직급`, c: c.color,
+    html: `<p class="sub">지금 직급: ${rankTag(r)}</p><div style="display:flex;flex-direction:column;gap:8px">
+      ${opt('vice', '부크루장으로', r === 2, vOn ? '지금 부크루장은 간부로 내려가요' : '')}${opt('officer', '간부로', r === 1 || oOn >= 3, oOn >= 3 ? '간부는 3명까지예요' : '')}${opt('member', '단원으로', r === 0)}
+      ${opt('leader', '크루장 넘기기', false, '나는 부크루장이 돼요')}
+      <button class="btn red block" data-a="kick" data-v="${uid}">추방</button><button class="btn gray block" data-a="manageCrew">돌아가기</button></div>` });
+};
+ACT.setRole = async v => {
+  const [uid, k] = v.split(':'), c = NET.crew; if (!c || !isLeader()) return;
+  let vices = (c.vices || []).filter(x => x !== uid), officers = (c.officers || []).filter(x => x !== uid), leader = c.leader;
+  if (k === 'vice') { officers = officers.concat(vices).slice(0, 3); vices = [uid]; }
+  if (k === 'officer') { if (officers.length >= 3) { toast('간부는 3명까지예요', 'bad'); return; } officers.push(uid); }
+  if (k === 'leader') { leader = uid; officers = officers.concat(vices.filter(x => x !== NET.uid)).slice(0, 3); vices = [NET.uid]; }
+  try { await crewRef(c.id).update({ leader, vices, officers }); toast(k === 'leader' ? '크루장을 넘겼어요' : '직급을 바꿨어요', 'good'); setTimeout(ACT.manageCrew, 300); } catch (e) { netErr(e); }
+};
 ACT.leaveCrew = async (v, el) => {
   if (!el.dataset.arm) { el.dataset.arm = 1; el.textContent = '정말요? 한 번 더 누르세요'; el.classList.replace('gray', 'red'); return; }
   const c = NET.crew; if (!c) return;
   try {
     if (isLeader() && c.members.length === 1) await crewRef(c.id).delete();
-    else if (isLeader()) await crewRef(c.id).update({ members: FV().arrayRemove(NET.uid), leader: c.members.find(u => u !== NET.uid) });
-    else await crewRef(c.id).update({ members: FV().arrayRemove(NET.uid) });
+    else if (isLeader()) { // 부크루장 → 간부 → 기여도 높은 단원 순으로 크루장을 넘겨요
+      const contrib = c.contrib || {}, rest = c.members.filter(u => u !== NET.uid).sort((a, b) => crewRank(c, b) - crewRank(c, a) || (contrib[b] || 0) - (contrib[a] || 0));
+      const next = rest[0];
+      await crewRef(c.id).update({ members: FV().arrayRemove(NET.uid), leader: next, vices: (c.vices || []).filter(x => x !== next && x !== NET.uid), officers: (c.officers || []).filter(x => x !== next && x !== NET.uid) });
+    }
+    else await crewRef(c.id).update({ members: FV().arrayRemove(NET.uid), vices: FV().arrayRemove(NET.uid), officers: FV().arrayRemove(NET.uid) });
     closeModal(); leftCrew('크루에서 나왔어요');
   } catch (e) { netErr(e); }
 };
@@ -313,11 +389,11 @@ const netCity = () => {
   } else {
     const n = ownedDistricts().length, c = NET.crew || { members: [NET.uid] };
     crew = `<div class="box brk" style="--c:${S.crew ? S.crew.color : 'var(--pink)'}"><div class="crewbox">${hexEmblem(S.crew ? S.crew.color : 'var(--pink)', S.crew ? S.crew.name[0] : '?', 54)}
-      <div class="meta"><div class="px" style="font-size:11px;color:${S.crew ? S.crew.color : 'var(--pink)'}">CREW LV.${crewLv()}${isLeader() ? ' · 크루장' : ''}</div><div class="h2">${esc(S.crew ? S.crew.name : '불러오는 중')}</div>
+      <div class="meta"><div class="px" style="font-size:11px;color:${S.crew ? S.crew.color : 'var(--pink)'}">CREW LV.${crewLv()} · ${RANKS[myRank()][0]}</div><div class="h2">${esc(S.crew ? S.crew.name : '불러오는 중')}</div>
       <div class="sub">크루원 ${c.members.length}/10 · 버프 크레딧 +${crewBuff()}% · 차지 구역 ${n}</div><div class="gauge thin" style="margin-top:6px;max-width:200px"><i style="width:${crewLv() >= 10 ? 100 : (S.crewXp % 120) / 1.2}%;--gc:${S.crew ? S.crew.color : 'var(--pink)'}"></i></div></div>
       <div class="big"><div><b style="color:var(--pink)">${S.tickets}</b><span>공격권</span></div><div><b style="color:var(--cyan)">${S.defenses}</b><span>방어전</span></div></div></div>
       <div class="row wrap" style="margin-top:12px"><button class="btn cyan ${S.spClaimed || !n ? 'off' : ''}" data-a="claimSp" ${S.spClaimed || !n ? 'disabled' : ''} style="flex:1">${S.spClaimed ? '오늘 특산품 받음' : n ? `오늘 특산품 받기 (${n}구역)` : '구역을 차지하면 매일 특산품이 들어와요'}</button>
-        <button class="btn gray sm" data-a="setDefense">현재 분대를 방어 팀으로</button><button class="btn gray sm" data-a="manageCrew">크루 관리${isLeader() && (c.pending || []).length ? ` (${c.pending.length})` : ''}</button></div></div>`;
+        <button class="btn gray sm" data-a="setDefense">현재 분대를 방어 팀으로</button><button class="btn gray sm" data-a="manageCrew">크루 관리${myRank() >= 1 && (c.pending || []).length ? ` (${c.pending.length})` : ''}</button><button class="btn amber sm" data-a="crewShop">크루 상점</button></div></div>`;
   }
   const tiles = DISTRICTS.map((d, i) => {
     const st = S.dist[i], lock = L < d.rep, own = st.owner, oc = ownerColor(own, i);

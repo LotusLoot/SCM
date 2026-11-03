@@ -1,0 +1,19 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "pvp": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('host/uid').val() === auth.uid || data.child('at').val() < now - 1800000) && (!newData.exists() || newData.child('host/uid').val() === auth.uid)",
+        ".validate": "$code.matches(/^[0-9]{4}$/)",
+        "guest": {
+          ".write": "auth != null && data.parent().child('host').exists() && (data.exists() ? data.child('uid').val() === auth.uid : (newData.child('uid').val() === auth.uid && data.parent().child('st').val() === 'wait'))"
+        },
+        "i": {
+          ".write": "auth != null && data.parent().child('guest/uid').val() === auth.uid"
+        }
+      }
+    }
+  }
+}

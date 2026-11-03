@@ -1121,3 +1121,35 @@ body { background: radial-gradient(120% 70% at 50% 0%, #1D2850 0%, #111833 45%, 
 .pf-tap { position: absolute; bottom: 8%; font-size: 12px; color: var(--dim); }
 .rleft { font-family: var(--f-body); font-size: 12px; font-weight: 800; color: var(--accent); background: rgba(255,194,61,.12); border: 1px solid rgba(255,194,61,.4); border-radius: 99px; padding: 1px 8px; vertical-align: middle; margin-left: 4px; }
 .rleft.no { color: var(--dim); background: rgba(255,255,255,.05); border-color: var(--line); }
+
+/* ===================== 크루 직급 · 기여도 · 상점 ===================== */
+.rtag { display: inline-block; font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 99px; color: var(--rc); border: 1px solid var(--rc); background: color-mix(in srgb, var(--rc) 14%, transparent); white-space: nowrap; }
+.crewhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(8,12,28,.45); border: 1px solid var(--line); }
+.cmems { display: flex; flex-direction: column; }
+.cmem { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto; gap: 10px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.cmem.me { background: rgba(255,194,61,.06); }
+.cmn { display: flex; align-items: center; gap: 6px; min-width: 0; } .cmn b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmc { display: flex; flex-direction: column; gap: 3px; } .cmc .px { font-size: 11px; color: var(--dim); text-align: right; }
+@media (max-width: 460px) { .cmem { grid-template-columns: minmax(0, 1fr) 80px auto; } }
+.coinbox { font-family: var(--f-title); font-size: 26px; color: var(--accent); white-space: nowrap; } .coinbox small { font-family: var(--f-body); font-size: 12px; color: var(--dim); margin-left: 4px; }
+.shoplist { display: flex; flex-direction: column; gap: 8px; }
+.shopit { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(8,12,28,.45); border: 1px solid var(--line); }
+.shopit b { display: block; font-size: 14px; } .shopit small { font-size: 12px; color: var(--dim); }
+.shopit.locked { opacity: .55; }
+
+/* --- 실시간 대결 대기실 --- */
+.pvp { display: flex; flex-direction: column; gap: 10px; }
+.pvrec { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; font-size: 18px; }
+.pvrec .sub { font-size: 12px; margin-left: auto; }
+.pvteam { display: flex; align-items: flex-end; gap: 4px; }
+.pvteam img { height: 58px; image-rendering: pixelated; }
+.pvteam .px { margin-left: auto; font-size: 12px; color: var(--dim); }
+.pvjoin { display: flex; gap: 8px; }
+.pvjoin input { flex: 1; min-width: 0; font-size: 18px; letter-spacing: .3em; text-align: center; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2, rgba(0,0,0,.25)); color: var(--fg); }
+.pvcode { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px; border: 1px dashed var(--cyan); border-radius: 12px; }
+.pvcode small { color: var(--dim); }
+.pvcode b { font-size: 44px; letter-spacing: .25em; color: var(--cyan); text-shadow: 0 0 18px rgba(45,226,230,.45); }
+.pvfoe { padding: 10px; border-radius: 12px; background: rgba(255,75,92,.08); border: 1px solid rgba(255,75,92,.4); }
+.pvfoe b { font-size: 16px; }
+.pvwait { text-align: center; animation: pvblink 1.4s ease-in-out infinite; }
+@keyframes pvblink { 50% { opacity: .45; } }

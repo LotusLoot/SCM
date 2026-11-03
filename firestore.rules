@@ -20,7 +20,32 @@ service cloud.firestore {
         && (!('arenaScore' in request.resource.data) || request.resource.data.arenaScore <= 5000);
     }
 
-    // 크루
+    // 크루 직급: 크루장 · 부크루장(vices) · 간부(officers) · 단원
+    function isVice(c, u) { return c.get('vices', []).hasAny([u]); }
+    function isOfficer(c, u) { return c.get('officers', []).hasAny([u]); }
+    function isStaff(c, u) { return c.leader == u || isVice(c, u) || isOfficer(c, u); }
+    function roleSizeOk(n) { return n.get('vices', []).size() <= 1 && n.get('officers', []).size() <= 3; }
+    function removedOf(o, n) { return o.members.toSet().difference(n.members.toSet()); }
+    // 간부 이상: 가입 승인·거절, 자기보다 낮은 직급 1명 추방
+    function staffEdit(o, n) {
+      return isStaff(o, uid())
+        && changed().hasOnly(['members', 'pending', 'pnames', 'names', 'vices', 'officers', 'banned'])
+        && n.leader == o.leader && n.members.size() <= 10
+        && n.members.toSet().difference(o.members.toSet()).difference(o.get('pending', []).toSet()).size() == 0
+        && removedOf(o, n).size() <= 1 && !removedOf(o, n).hasAny([o.leader, uid()])
+        && (o.leader == uid() || !removedOf(o, n).hasAny(o.get('vices', [])))
+        && (o.leader == uid() || isVice(o, uid()) || !removedOf(o, n).hasAny(o.get('officers', [])))
+        && n.get('vices', []).toSet() == o.get('vices', []).toSet().difference(removedOf(o, n))
+        && n.get('officers', []).toSet() == o.get('officers', []).toSet().difference(removedOf(o, n));
+    }
+    // 가입 신청: 추방 뒤 24시간은 못 해요
+    function notBanned(o) { return !(uid() in o.get('banned', {})) || o.banned[uid()] < request.time.toMillis() - 86400000; }
+    // 크루원: 크루 경험치와 자기 기여도만, 한 번에 50까지
+    function contribOk(o, n) {
+      return n.get('contrib', {}).diff(o.get('contrib', {})).affectedKeys().hasOnly([uid()])
+        && n.get('contrib', {}).get(uid(), 0) >= o.get('contrib', {}).get(uid(), 0)
+        && n.get('contrib', {}).get(uid(), 0) - o.get('contrib', {}).get(uid(), 0) <= 50;
+    }
     match /crews/{cid} {
       allow read: if signedIn();
       allow create: if signedIn()
@@ -30,20 +55,25 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 12;
       allow delete: if signedIn() && resource.data.leader == uid();
       allow update: if signedIn() && (
-        // 크루장: 승인·거절·추방·크루장 넘기기 (최대 10명)
+        // 크루장: 무엇이든 (최대 10명, 부크루장 1명, 간부 3명)
         (resource.data.leader == uid() && request.resource.data.members.size() <= 10
-          && request.resource.data.members.hasAny([request.resource.data.leader]))
+          && request.resource.data.members.hasAny([request.resource.data.leader]) && roleSizeOk(request.resource.data))
+        // 간부 이상: 승인·거절·추방
+        || staffEdit(resource.data, request.resource.data)
         // 아무나: 자기 자신의 가입 신청만 넣거나 빼기
-        || (changed().hasOnly(['pending', 'pnames'])
+        || (changed().hasOnly(['pending', 'pnames']) && notBanned(resource.data)
           && request.resource.data.pending.toSet().difference(resource.data.pending.toSet())
                .union(resource.data.pending.toSet().difference(request.resource.data.pending.toSet())).hasOnly([uid()]))
-        // 크루원: 크루 경험치 올리기 (한 번에 50까지)
-        || (changed().hasOnly(['xp']) && resource.data.members.hasAny([uid()])
-          && request.resource.data.xp > resource.data.xp && request.resource.data.xp - resource.data.xp <= 50)
-        // 크루원: 스스로 탈퇴
-        || (changed().hasOnly(['members']) && resource.data.members.hasAny([uid()])
+        // 크루원: 크루 경험치 · 내 기여도 올리기
+        || (changed().hasOnly(['xp', 'contrib']) && resource.data.members.hasAny([uid()])
+          && request.resource.data.xp >= resource.data.xp && request.resource.data.xp - resource.data.xp <= 50
+          && contribOk(resource.data, request.resource.data))
+        // 크루원: 스스로 탈퇴 (직급도 같이 내려놓기)
+        || (changed().hasOnly(['members', 'vices', 'officers']) && resource.data.members.hasAny([uid()])
           && resource.data.members.toSet().difference(request.resource.data.members.toSet()).hasOnly([uid()])
-          && request.resource.data.members.size() == resource.data.members.size() - 1)
+          && request.resource.data.members.size() == resource.data.members.size() - 1
+          && request.resource.data.get('vices', []).toSet() == resource.data.get('vices', []).toSet().difference([uid()].toSet())
+          && request.resource.data.get('officers', []).toSet() == resource.data.get('officers', []).toSet().difference([uid()].toSet()))
       );
 
       // 크루 협동 현상금: 크루원만, 보스 체력은 줄어들기만

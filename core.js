@@ -45,7 +45,7 @@ function addRep(n) {
     if (after >= 10 && !S.titles.includes('도시의 전설')) { S.titles.push('도시의 전설'); S.title = '도시의 전설'; toast('칭호 「도시의 전설」 획득!', 'gold'); }
   }
 }
-function addCrewXp(n) { if (!S.crew) return; const b = crewLv(); S.crewXp += n; if (crewLv() > b) toast(`크루 LV.${crewLv()}! 크레딧 보너스 +${crewBuff()}%`, 'good'); }
+function addCrewXp(n) { if (!S.crew) return; const b = crewLv(); S.crewXp += n; S.crewCoin = (S.crewCoin || 0) + Math.round(n) * 10; if (crewLv() > b) toast(`크루 LV.${crewLv()}! 크레딧 보너스 +${crewBuff()}%`, 'good'); }
 let GRANT_LOG = null; // 배열이면 전투 결과 화면에 모아 보여 줘요
 function grant(r, quiet) {
   const parts = [];
@@ -55,7 +55,7 @@ function grant(r, quiet) {
   if (r.mats) for (const k in r.mats) if (r.mats[k]) { S.mats[k] += r.mats[k]; parts.push(`${MATS[k]} +${r.mats[k]}`); }
   if (r.rep) { parts.push(`평판 +${r.rep}`); }
   if (r.rep) addRep(r.rep);
-  if (r.crew) addCrewXp(r.crew);
+  if (r.crew) { if (S.crew) parts.push(`크루 기여 +${r.crew}`); addCrewXp(r.crew); }
   if (GRANT_LOG) GRANT_LOG.push(...parts);
   else if (!quiet && parts.length) toast(parts.join(' · '), 'gold');
   return parts.join(' · ');
