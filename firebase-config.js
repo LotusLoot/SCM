@@ -8,5 +8,6 @@ window.FIREBASE_CONFIG = {
   storageBucket: "scmgame.firebasestorage.app",
   messagingSenderId: "877658924078",
   appId: "1:877658924078:web:daefb74d64ad66cfd3ebbf",
-  measurementId: "G-NYRJ94FXR3"
+  measurementId: "G-NYRJ94FXR3",
+  databaseURL: "https://scmgame-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
