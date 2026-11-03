@@ -460,6 +460,7 @@ SCREENS.ops = () => {
     ${card('netdive', 'var(--cyan)', 'glitch', 1, '넷 다이브', 6, `<div class="px" style="font-size:22px;color:var(--cyan)">${fmt(S.dive.best)}</div><div class="sub">최고 점수 · 오늘 보상 ${S.dive.left}/3회</div>`)}
     ${card('bounty', 'var(--red)', bt.boss, 2, '현상금 사냥', 7, `<div class="sub">이번 주: <b style="color:var(--fg)">${MERCS[bt.boss].n}</b>${bt.done ? ' · 제압 완료' : ''}</div><div class="row">${clues}<span class="px" style="font-size:11px">단서 ${bt.clues}/3</span></div>
       <div class="gauge" style="max-width:60%"><i style="width:${bt.hp * 100}%;--gc:var(--red)"></i></div>`)}
+    ${ONLINE ? card('pvp', 'var(--cyan)', 'chrono', 1, '실시간 대결', 2, (() => { const p = S.pvp || { w: 0, l: 0, d: 0 }; return `<div class="sub">친구와 1:1 · 방 코드로 만나요</div><div class="px" style="font-size:18px;color:var(--cyan)">${p.w}승 ${p.l}패 ${p.d}무</div>`; })()) : ''}
   </div></div>`;
 };
 ACT.cv = v => { CV = clamp(CV + +v, 0, CHAPTERS.length - 1); refresh(); };

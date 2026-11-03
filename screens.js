@@ -113,6 +113,42 @@ ACT.sendShip = mid => {
 };
 ACT.claimShip = id => { const j = S.jobs.find(x => x.id === id); if (!j || Date.now() < j.until) return; j.st = 'done'; jobReward(j, j.bonus || 1); refresh(); };
 
+/* ================= 크루 상점 (크루 코인: 크루 기여 1당 10개) ================= */
+const CREW_SHOP = [
+  { k: 'cr', n: '크레딧 5,000', p: 250, lim: 5, lv: 1, r: { credits: 5000 } },
+  { k: 'alloy', n: '합금 ×3', p: 300, lim: 5, lv: 1, r: { mats: { alloy: 3 } } },
+  { k: 'bio', n: '바이오젤 ×3', p: 300, lim: 5, lv: 1, r: { mats: { biogel: 3 } } },
+  { k: 'neu', n: '뉴럴칩 ×3', p: 300, lim: 5, lv: 2, r: { mats: { neural: 3 } } },
+  { k: 'exp', n: '전투 데이터 3,000', p: 400, lim: 5, lv: 2, r: { exp: 3000 } },
+  { k: 'chip', n: '데이터칩 50', p: 600, lim: 3, lv: 3, r: { chips: 50 } },
+  { k: 'ess', n: '일반 용병 정수 (선택)', p: 2500, lim: 1, lv: 5, ess: 1 },
+];
+const cshop = () => { const w = weekIdx(); if (!S.cshop || S.cshop.w !== w) S.cshop = { w, b: {} }; return S.cshop; };
+ACT.crewShop = () => {
+  if (!S.crew) { toast('크루에 들어가야 열려요', 'bad'); return; }
+  const sh = cshop(), coin = S.crewCoin || 0, L = crewLv();
+  const rows = CREW_SHOP.map(it => {
+    const left = it.lim - (sh.b[it.k] || 0), lock = L < it.lv, can = !lock && left > 0 && coin >= it.p;
+    return `<div class="shopit ${lock ? 'locked' : ''}"><div><b>${it.n}</b><small>${lock ? `크루 LV.${it.lv}에 열려요` : `이번 주 ${left}/${it.lim}개 남음`}</small></div>
+      <button class="btn sm ${can ? 'amber' : 'gray off'}" data-a="crewBuy" data-v="${it.k}" ${can ? '' : 'disabled'}>코인 ${fmt(it.p)}</button></div>`;
+  }).join('');
+  openModal({ label: 'CREW SHOP', title: '크루 상점', c: 'var(--amber)',
+    html: `<div class="spread"><div class="sub">크루 코인은 크루 기여 1마다 10개씩 쌓여요. 의뢰·아레나·구역전·현상금으로 모아요.</div><div class="coinbox">${fmt(coin)}<small>코인</small></div></div>
+      <div class="shoplist">${rows}</div><p class="sub" style="font-size:12px">살 수 있는 개수는 매주 월요일에 다시 채워져요. 크루 레벨이 오르면 물건이 늘어요.</p>` });
+};
+ACT.crewBuy = k => {
+  const it = CREW_SHOP.find(x => x.k === k), sh = cshop(); if (!it) return;
+  if (crewLv() < it.lv || (sh.b[k] || 0) >= it.lim || (S.crewCoin || 0) < it.p) return;
+  if (it.ess) { ACT._essPick = 1; openModal({ label: 'CREW SHOP', title: '정수를 받을 용병', c: 'var(--amber)', wide: true,
+    html: `<p class="sub">고른 용병의 정수 1개를 받아요 (없는 용병이면 합류해요).</p><div class="cards">${COMMON_IDS.map(id => mercCard(id, { act: 'crewEss', noLv: 1 })).join('')}</div>` }); return; }
+  S.crewCoin -= it.p; sh.b[k] = (sh.b[k] || 0) + 1; grant(it.r); sfx('reward'); save(); renderTop(); ACT.crewShop();
+};
+ACT.crewEss = id => {
+  const it = CREW_SHOP.find(x => x.k === 'ess'), sh = cshop(); if (!ACT._essPick || (S.crewCoin || 0) < it.p || (sh.b.ess || 0) >= it.lim) return;
+  ACT._essPick = 0; S.crewCoin -= it.p; sh.b.ess = (sh.b.ess || 0) + 1; const a = acquire(id); sfx('legend');
+  toast(`${MERCS[id].n} ${a.kind === 'new' ? '합류!' : a.txt}`, 'gold'); save(); refresh(); ACT.crewShop();
+};
+
 /* ================= 도시 ================= */
 function bldSvg(i) {
   let seed = i * 9301 + 49297; const r = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
@@ -136,7 +172,7 @@ SCREENS.city = () => {
       <div class="meta"><div class="px" style="font-size:11px;color:${S.crew.color}">CREW LV.${crewLv()}</div><div class="h2">${esc(S.crew.name)}</div>
       <div class="sub">크루원 1/10 · 버프 크레딧 +${crewBuff()}% · 차지 구역 ${n}</div><div class="gauge thin" style="margin-top:6px;max-width:200px"><i style="width:${crewLv() >= 10 ? 100 : (S.crewXp % 120) / 1.2}%;--gc:${S.crew.color}"></i></div></div>
       <div class="big"><div><b style="color:var(--pink)">${S.tickets}</b><span>공격권</span></div><div><b style="color:var(--cyan)">${S.defenses}</b><span>방어전</span></div></div></div>
-      <div style="margin-top:12px"><button class="btn cyan block ${S.spClaimed || !n ? 'off' : ''}" data-a="claimSp" ${S.spClaimed || !n ? 'disabled' : ''}>${S.spClaimed ? '오늘 특산품 받음' : n ? `오늘 특산품 받기 (${n}구역)` : '구역을 차지하면 매일 특산품이 들어와요'}</button></div></div>`;
+      <div style="margin-top:12px"><button class="btn cyan block ${S.spClaimed || !n ? 'off' : ''}" data-a="claimSp" ${S.spClaimed || !n ? 'disabled' : ''}>${S.spClaimed ? '오늘 특산품 받음' : n ? `오늘 특산품 받기 (${n}구역)` : '구역을 차지하면 매일 특산품이 들어와요'}</button><button class="btn amber block" data-a="crewShop" style="margin-top:8px">크루 상점 · 코인 ${fmt(S.crewCoin || 0)}</button></div></div>`;
   }
   const tiles = DISTRICTS.map((d, i) => {
     const st = S.dist[i], lock = L < d.rep, own = st.owner, oc = ownerColor(own, i);
@@ -228,10 +264,10 @@ ACT.fightDistrict = v => {
 
 /* ================= 작전 ================= */
 ACT.op = k => {
-  const need = { building: 4, bounty: 7, netdive: 6, arena: 2 }[k];
+  const need = { building: 4, bounty: 7, netdive: 6, arena: 2, pvp: 2 }[k];
   if (repLv() < need) { toast(`평판 LV.${need}에 열려요. 의뢰로 평판을 쌓으세요`, 'bad'); return; }
   if (!S.squad.some(Boolean) && k !== 'netdive') { toast('본부에서 용병을 배치하세요', 'bad'); return; }
-  ({ building: openBuilding, bounty: openBounty, netdive: openNetDive, arena: openArena })[k]();
+  ({ building: openBuilding, bounty: openBounty, netdive: openNetDive, arena: openArena, pvp: openPvp })[k]();
 };
 
 /* --- 아레나 --- */
