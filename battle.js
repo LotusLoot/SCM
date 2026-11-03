@@ -263,7 +263,7 @@ function leaderAttack(u) {
     foes.filter(t2 => inArc(u, t2, r, u.aimx, u.aimy, fin ? -.3 : .15)).forEach(t2 => hit(u, t2, (fin ? .95 : .5) * (u.role === 'guardian' ? .85 : 1), { kb: fin ? 230 : 50, fin }));
   } else {
     u.atkCd = .44 / Math.min(1.3, u.spd / 100) * leadHaste(u);
-    let t = foes.filter(f => Math.sign(f.x - u.x) === u.face || B.inp.x === 0).sort((a, b) => dist(u, a) - dist(u, b))[0] || nearest(u, foes);
+    let t = (B.mouseAtk && B.mouseW && nearest(B.mouseW, foes, 260)) || foes.filter(f => Math.sign(f.x - u.x) === u.face || B.inp.x === 0).sort((a, b) => dist(u, a) - dist(u, b))[0] || nearest(u, foes); // 클릭하면 커서 근처 적을 쏴요
     if (!t) return; aimAt(u, t);
     u.shot = (u.shot || 0) + 1; const fin = u.shot % 4 === 0; // 4발째는 강한 한 발
     shoot(u, t, (u.role === 'medic' ? .45 : u.role === 'sniper' ? .7 : .58) * (fin ? 1.8 : 1), { w: fin ? 7 : u.role === 'sniper' ? 4 : 3, speed: 2000, fin, c: fin ? ELEMS[u.el].c : null });
@@ -648,7 +648,8 @@ function controlLeader(u, g, spdMul) {
   const hm = u.buff && u.buff.haste > 0 ? 1.4 : 1;
   if (!u.dash && (ix || iy)) { u.x += ix * u.mv * 1.15 * hm * spdMul * g; u.y += iy * u.mv * 1.15 * hm / DEPTH * spdMul * g; if (Math.abs(ix) > .2) u.face = Math.sign(ix); u.aimx = ix; u.aimy = iy * .5; clampPos(u); u.moving = true; } else u.moving = false;
   if (u.moving && !B.instant) { u.dustT = (u.dustT || 0) - g; if (u.dustT <= 0) { u.dustT = .14; const q = upos(u); B.parts.push({ x: q.x - u.face * 10, y: q.y - 2, vx: -u.face * rnd(20, 60), vy: -rnd(20, 50), life: .3, c: 'rgba(190,180,240,.45)', s: rnd(3, 5) }); } }
-  if (k.atk || B.holdAtk || (B.atkBuf > 0 && u.atkCd <= 0)) leaderAttack(u);
+  if (B.mouseAtk && B.mouseW && !u.moving && Math.abs(B.mouseW.x - u.x) > 8) u.face = Math.sign(B.mouseW.x - u.x);
+  if (k.atk || B.holdAtk || B.mouseAtk || (B.atkBuf > 0 && u.atkCd <= 0)) leaderAttack(u);
 }
 function allyAI(u, g, spdMul) {
   const F = foesOf(u); if (!F.length) return;
@@ -740,11 +741,25 @@ function buildBattleDom() {
       <div class="abtns">
         <button class="ab ult" id="a-ult" aria-label="궁극기"><i class="fill"></i><b>궁극기</b><small class="kh">I</small></button>
         <button class="ab skill" id="a-skill" aria-label="스킬"><i class="cdv"></i><b id="a-skn">스킬</b><small class="kh">L</small><span class="cdt"></span></button>
-        <button class="ab dodge" id="a-dodge" aria-label="회피"><i class="cdv"></i><b>회피</b><small class="kh">K</small></button>
-        <button class="ab atk" id="a-atk" aria-label="공격"><b>공격</b><small class="kh">J</small></button>
+        <button class="ab dodge" id="a-dodge" aria-label="회피"><i class="cdv"></i><b>회피</b><small class="kh">K · 우클릭</small></button>
+        <button class="ab atk" id="a-atk" aria-label="공격"><b>공격</b><small class="kh">J · 클릭</small></button>
       </div></div></div>`;
   document.body.appendChild(el);
   B.el = el; B.cv = $('#b-cv', el); B.ctx = B.cv.getContext('2d');
+  // 컴퓨터: 전장 왼쪽 클릭 = 공격(누르고 있으면 계속, 커서 쪽 적을 노려요), 오른쪽 클릭 = 회피
+  const mouseW = ev => { const r = B.cv.getBoundingClientRect(); B.mouseW = { x: clamp((ev.clientX - r.left) / r.width * 1000, 0, 1000), y: clamp(((ev.clientY - r.top) / r.height - .47) / .47 * 100, 0, 100) }; };
+  B.cv.addEventListener('pointerdown', ev => {
+    if (ev.pointerType !== 'mouse' || !B || B.ended || !B.leader) return; ev.preventDefault(); mouseW(ev);
+    if (ev.button === 2) { doDodge(B.leader); return; }
+    if (ev.button !== 0) return;
+    B.mouseAtk = true; try { B.cv.setPointerCapture(ev.pointerId); } catch (e) { }
+    if (B.mouseW.x !== undefined && Math.abs(B.mouseW.x - B.leader.x) > 8) B.leader.face = Math.sign(B.mouseW.x - B.leader.x);
+    leaderAttack(B.leader);
+  });
+  B.cv.addEventListener('pointermove', ev => { if (B && B.mouseAtk) mouseW(ev); });
+  const mup = ev => { if (B && ev.pointerType === 'mouse') B.mouseAtk = false; };
+  B.cv.addEventListener('pointerup', mup); B.cv.addEventListener('pointercancel', mup);
+  B.cv.addEventListener('contextmenu', ev => ev.preventDefault());
   // 팀 교체 · 동료 궁극기
   $$('.tm[data-slot]', el).forEach(b => {
     b.addEventListener('pointerdown', ev => {
@@ -799,7 +814,7 @@ function buildBattleDom() {
     else { const m = /^(Digit|Numpad)([1-5])$/.exec(ev.code); if (m) { const u = B.units.find(x => x.side === 'a' && x.slot === +m[2] - 1 && !x.cargo); if (u) ev.shiftKey ? useUlt(u) : swapTo(u); } }
   };
   B.onKeyUp = ev => { if (!B) return; const k = ev.key.toLowerCase(); if (KEY[k]) B.keys[KEY[k]] = false; };
-  B.onBlur = () => { if (B) { B.keys = {}; B.holdAtk = false; } };
+  B.onBlur = () => { if (B) { B.keys = {}; B.holdAtk = false; B.mouseAtk = false; } };
   window.addEventListener('keydown', B.onKey); window.addEventListener('keyup', B.onKeyUp); window.addEventListener('blur', B.onBlur);
   if (!S.seen.tips) S.seen.tips = {};
   B.ro = new ResizeObserver(resizeField); B.ro.observe($('#b-field', el)); resizeField();
@@ -814,8 +829,8 @@ function showHelp() {
     label: 'HOW TO PLAY', title: '조작법', c: 'var(--cyan)',
     html: `<div class="howto">
       <div><b>이동</b><span>왼쪽 아래를 누른 채 끌기 · PC는 WASD / 방향키</span></div>
-      <div><b>공격</b><span>누르고 있으면 계속 공격. 근접은 3연타, 원거리는 가까운 적을 자동 조준 (J)</span></div>
-      <div><b>회피</b><span>짧게 돌진하며 잠깐 무적. <em>빨간 경고 범위</em>가 터지기 직전에 피하면 PERFECT! 시간이 느려지고 에너지가 차요 (K · 스페이스)</span></div>
+      <div><b>공격</b><span>누르고 있으면 계속 공격. 근접은 3연타, 원거리는 가까운 적을 자동 조준 (J · 컴퓨터는 전장을 왼쪽 클릭, 원거리는 클릭한 곳 근처 적을 쏴요)</span></div>
+      <div><b>회피</b><span>짧게 돌진하며 잠깐 무적. <em>빨간 경고 범위</em>가 터지기 직전에 피하면 PERFECT! 시간이 느려지고 에너지가 차요 (K · 스페이스 · 오른쪽 클릭)</span></div>
       <div><b>스킬</b><span>용병마다 다른 기술, 몇 초마다 다시 써요 (L)</span></div>
       <div><b>궁극기</b><span>에너지가 다 차면 사용. 적을 때리거나 쓰러진 적의 코어를 주우면 차요 (I)</span></div>
       <div><b>교체</b><span>아래 초상화를 누르면 그 용병을 조작해요. 초상화 위 <em>궁</em>을 누르면 동료 궁극기 (1~3 · Shift+1~3)</span></div>
